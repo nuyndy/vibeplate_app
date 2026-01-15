@@ -1,37 +1,24 @@
-# Recipes App in React Native
+Food App & Inventory Manager
 
-<center><a href="https://instamobile.io/app-templates/food-app-template/"><img src="https://www.instamobile.io/wp-content/uploads/2019/07/Screen-Shot-2019-07-22-at-8.56.44-PM.png" /></a></center>
+Ứng dụng công thức nấu ăn và quản lý tủ lạnh, được xây dựng bằng React Native (Expo) và kết nối với Firebase Firestore.
 
-Download this beautiful free React Native starter kit, featuring a recipes app, to bootstrap your mobile app development. Learn React Native by working on a real project. Get familiar with various native components, navigation, redux and more.
+<center><img src="https://i.pinimg.com/736x/ae/a3/70/aea370de411a7ce2c4d20910bed150b6.jpg" alt="App Screenshot" width="400"/></center>
 
-## Getting Started
+✨ Tính năng chính
 
-To run the app, simply run
+- Tra cứu món ăn: Xem công thức, hướng dẫn nấu và nguyên liệu cần thiết.
+- Quản lý Kho (Tủ lạnh): Thêm/Sửa/Xóa thực phẩm và theo dõi hạn sử dụng.
+- Tìm kiếm: Tìm món ăn theo tên, danh mục hoặc nguyên liệu có sẵn.
 
-```yarn install && expo start```
+Dữ liệu Online: Đồng bộ dữ liệu trực tiếp từ Firebase.
 
-And scan the QR code in the Expo client app.
+📂 Dữ liệu
 
-## Expo Demo
+Ứng dụng sử dụng 4 bảng dữ liệu (Collections) trên Firestore:
 
-<center><a href=""><img src="https://instamobile.io/wp-content/uploads/2019/07/Screen-Shot-2019-07-22-at-8.20.29-PM.png" /></a></center>
+- recipes: Danh sách món ăn.
+- categories: Danh mục (Ăn vặt, Món chính...).
+- ingredients: Danh sách nguyên liệu.
+- inventory: Kho thực phẩm của người dùng.
 
-## Features
-
-- Recipes List
-- Categories
-- Ingredients
-- Recipes Details Screen
-- Photo Gallery
-- Detailed Description
-- Ingredients button
-- Ingredients List
-- Recipes by Ingredient
-- Search
-- Drawer Menu
-- Navigation Bar
-- Beautiful UI Design Kit
-- Compatible with Expo
-- Highly modularized codebase
-
-Coded with 💖💖💖 by <a href="https://instamobile.io/">Instamobile</a>, <a href="https://instaflutter.com/">Instaflutter</a>. and <a href="https://instakotlin.com/">Instakotlin</a>.
+Dựa trên Starter Kit của Instamobile, tùy biến bởi [Tên Của Bạn].
