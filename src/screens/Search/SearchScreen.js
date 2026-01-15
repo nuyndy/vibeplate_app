@@ -1,15 +1,35 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
-import { FlatList, Text, View, Image, TouchableHighlight, Pressable } from "react-native";
+import { FlatList, Text, View, Image, TouchableHighlight, Pressable, Keyboard } from "react-native";
 import styles from "./styles";
 import MenuImage from "../../components/MenuImage/MenuImage";
-import { getCategoryName, getRecipesByRecipeName, getRecipesByCategoryName, getRecipesByIngredientName } from "../../data/MockDataAPI";
 import { TextInput } from "react-native-gesture-handler";
+// Import Service mới
+import { 
+  getRecipesByRecipeName, 
+  getRecipesByCategoryName, 
+  getRecipesByIngredientName,
+  getAllCategories
+} from "../../data/MockDataAPI";
 
 export default function SearchScreen(props) {
   const { navigation } = props;
 
   const [value, setValue] = useState("");
   const [data, setData] = useState([]);
+  
+  // State lưu danh sách Category để tra cứu tên nhanh
+  const [categoryMap, setCategoryMap] = useState({});
+
+  // 1. Load danh mục một lần duy nhất khi vào màn hình
+  useEffect(() => {
+    const loadCategories = async () => {
+        const cats = await getAllCategories();
+        const map = {};
+        cats.forEach(c => { map[c.id] = c.name; });
+        setCategoryMap(map);
+    };
+    loadCategories();
+  }, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -25,32 +45,56 @@ export default function SearchScreen(props) {
           <Image style={styles.searchIcon} source={require("../../../assets/icons/search.png")} />
           <TextInput
             style={styles.searchInput}
-            onChangeText={handleSearch}
+            onChangeText={handleSearch} // Hàm xử lý khi gõ phím
             value={value}
+            placeholder="Search..." // Thêm placeholder cho đẹp
+            placeholderTextColor="grey"
           />
           <Pressable onPress={() => handleSearch("")}>
-          <Image style={styles.searchIcon} source={require("../../../assets/icons/close.png")} />
+            <Image style={styles.searchIcon} source={require("../../../assets/icons/close.png")} />
           </Pressable>
         </View>
       ),
       headerRight: () => <View />,
     });
-  }, [value]);
+  }, [value]); // Render lại header khi value thay đổi để update input
 
-  useEffect(() => {}, [value]);
-
-  const handleSearch = (text) => {
+  // 2. Hàm xử lý tìm kiếm (Logic chính)
+  const handleSearch = async (text) => {
     setValue(text);
-    var recipeArray1 = getRecipesByRecipeName(text);
-    var recipeArray2 = getRecipesByCategoryName(text);
-    var recipeArray3 = getRecipesByIngredientName(text);
-    var aux = recipeArray1.concat(recipeArray2);
-    var recipeArray = [...new Set(aux)];
 
-    if (text == "") {
+    if (text === "") {
       setData([]);
-    } else {
-      setData(recipeArray);
+      return;
+    }
+
+    // Tối ưu: Chỉ tìm kiếm khi gõ nhiều hơn 1 ký tự để đỡ tốn tài nguyên Firebase
+    // Bạn có thể bỏ dòng if này nếu muốn tìm ngay lập tức
+    if (text.length < 2) return; 
+
+    try {
+      // Gọi 3 hàm tìm kiếm song song (Promise.all)
+      const [byName, byCategory, byIngredient] = await Promise.all([
+        getRecipesByRecipeName(text),
+        getRecipesByCategoryName(text),
+        getRecipesByIngredientName(text)
+      ]);
+
+      // Gộp kết quả lại
+      const combined = [...byName, ...byCategory, ...byIngredient];
+
+      // Lọc trùng lặp (Dedup) dựa trên ID
+      // Vì Object trả về từ Firebase là các instance khác nhau, ta không dùng Set trực tiếp được
+      const uniqueIds = new Set();
+      const uniqueRecipes = combined.filter(element => {
+        const isDuplicate = uniqueIds.has(element.id);
+        uniqueIds.add(element.id);
+        return !isDuplicate;
+      });
+
+      setData(uniqueRecipes);
+    } catch (error) {
+      console.error("Search Error:", error);
     }
   };
 
@@ -63,14 +107,26 @@ export default function SearchScreen(props) {
       <View style={styles.container}>
         <Image style={styles.photo} source={{ uri: item.photo_url }} />
         <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.category}>{getCategoryName(item.categoryId)}</Text>
+        {/* Tra cứu tên Category từ Map đã load ở bước 1 */}
+        <Text style={styles.category}>
+            {categoryMap[item.categoryId] || "Unknown Category"}
+        </Text>
       </View>
     </TouchableHighlight>
   );
 
   return (
-    <View>
-      <FlatList vertical showsVerticalScrollIndicator={false} numColumns={2} data={data} renderItem={renderRecipes} keyExtractor={(item) => `${item.recipeId}`} />
+    <View style={{flex: 1}}> 
+      <FlatList 
+        vertical 
+        showsVerticalScrollIndicator={false} 
+        numColumns={2} 
+        data={data} 
+        renderItem={renderRecipes} 
+        keyExtractor={(item) => `${item.id}`} 
+        // Thêm tính năng tắt bàn phím khi cuộn danh sách
+        onScroll={() => Keyboard.dismiss()} 
+      />
     </View>
   );
 }
