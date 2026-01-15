@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useLayoutEffect, useRef, useState, useEffect } from "react";
 import {
   ScrollView,
   Text,
@@ -10,11 +10,8 @@ import {
 import styles from "./styles";
 import { useSharedValue } from 'react-native-reanimated';
 import Carousel, { Pagination } from 'react-native-reanimated-carousel';
-import {
-  getIngredientName,
-  getCategoryName,
-  getCategoryById,
-} from "../../data/MockDataAPI";
+// Import Service mới
+import { getCategoryById } from "../../data/MockDataAPI";
 import BackButton from "../../components/BackButton/BackButton";
 import ViewIngredientsButton from "../../components/ViewIngredientsButton/ViewIngredientsButton";
 
@@ -23,10 +20,12 @@ const { width: viewportWidth } = Dimensions.get("window");
 export default function RecipeScreen(props) {
   const { navigation, route } = props;
   const item = route.params?.item;
-  const category = getCategoryById(item.categoryId);
-  const title = getCategoryName(category.id);
-  const slider1Ref = useRef(null)
-  const progress = useSharedValue(0)
+
+  // 1. Khai báo State để lưu Category
+  const [activeCategory, setActiveCategory] = useState(null);
+  
+  const slider1Ref = useRef(null);
+  const progress = useSharedValue(0);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -42,6 +41,17 @@ export default function RecipeScreen(props) {
     });
   }, []);
 
+  // 2. Fetch thông tin Category từ Firebase dựa trên item.categoryId
+  useEffect(() => {
+    const fetchCategory = async () => {
+      if (item.categoryId) {
+        const catData = await getCategoryById(item.categoryId);
+        setActiveCategory(catData);
+      }
+    };
+    fetchCategory();
+  }, [item]);
+
   const renderImage = ({ item }) => (
     <TouchableHighlight>
       <View style={styles.imageContainer}>
@@ -50,36 +60,26 @@ export default function RecipeScreen(props) {
     </TouchableHighlight>
   );
 
-  const onPressIngredient = (item) => {
-    var name = getIngredientName(item);
-    let ingredient = item;
-    navigation.navigate("Ingredient", { ingredient, name });
+  const onPressPagination = (index) => {
+    slider1Ref.current?.scrollTo({
+      count: index - progress.value,
+      animated: true,
+    });
   };
-
-
-  const onPressPagination = (index) =>
-    {
-      slider1Ref.current?.scrollTo({
-        count: index - progress.value,
-        animated: true,
-      })
-    }
-  
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.carouselContainer}>
         <View style={styles.carousel}>
           <Carousel
-              ref={c =>
-              {
-                slider1Ref.current = c
-              }}
+            ref={(c) => {
+              slider1Ref.current = c;
+            }}
             loop={false}
             width={viewportWidth}
-            height={viewportWidth}
+            height={250} // Điều chỉnh chiều cao phù hợp (thường là 250 hoặc viewportWidth)
             autoPlay={false}
-            data={item.photosArray}
+            data={item.photosArray || [item.photo_url]} // Fallback nếu không có mảng ảnh
             scrollAnimationDuration={1000}
             renderItem={renderImage}
             onProgressChange={progress}
@@ -94,23 +94,32 @@ export default function RecipeScreen(props) {
               />
             )}
             progress={progress}
-            data={item.photosArray}
+            data={item.photosArray || [item.photo_url]}
             dotStyle={styles.paginationDot}
             containerStyle={styles.paginationContainer}
             onPress={onPressPagination}
           />
         </View>
       </View>
+      
       <View style={styles.infoRecipeContainer}>
         <Text style={styles.infoRecipeName}>{item.title}</Text>
+        
         <View style={styles.infoContainer}>
           <TouchableHighlight
-            onPress={() =>
-              navigation.navigate("RecipesList", { category, title })
-            }
+            onPress={() => {
+              // Chỉ navigate khi đã load xong category
+              if (activeCategory) {
+                navigation.navigate("RecipesList", { 
+                    category: activeCategory, 
+                    title: activeCategory.name 
+                });
+              }
+            }}
           >
             <Text style={styles.category}>
-              {getCategoryName(item.categoryId).toUpperCase()}
+              {/* Hiển thị tên category từ state, hoặc Loading nếu chưa xong */}
+              {activeCategory ? activeCategory.name.toUpperCase() : "LOADING..."}
             </Text>
           </TouchableHighlight>
         </View>
@@ -126,6 +135,8 @@ export default function RecipeScreen(props) {
         <View style={styles.infoContainer}>
           <ViewIngredientsButton
             onPress={() => {
+              // item.ingredients từ Firebase đã có cấu trúc [[id, qty], ...]
+              // truyền thẳng sang IngredientsDetailsScreen là khớp.
               let ingredients = item.ingredients;
               let title = "Ingredients for " + item.title;
               navigation.navigate("IngredientsDetails", { ingredients, title });
