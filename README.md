@@ -21,4 +21,4 @@ Dữ liệu Online: Đồng bộ dữ liệu trực tiếp từ Firebase.
 - ingredients: Danh sách nguyên liệu.
 - inventory: Kho thực phẩm của người dùng.
 
-Dựa trên Starter Kit của Instamobile, tùy biến bởi [Tên Của Bạn].
+Dựa trên Starter Kit của Instamobile.
