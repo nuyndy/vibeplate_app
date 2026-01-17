@@ -1,7 +1,7 @@
-🍳 Smart Kitchen Mate - Trợ Lý Bếp & Quản Lý Thực Phẩm Thông Minh
+🍳 Trợ Lý Bếp & Quản Lý Thực Phẩm Thông Minh
 Ứng dụng "All-in-one" giúp bạn quản lý tủ lạnh, gợi ý món ăn theo sở thích cá nhân và kết nối cộng đồng yêu bếp. Xây dựng trên nền tảng React Native (Expo) và Firebase.
 
-<center><img src="https://i.pinimg.com/736x/ae/a3/70/aea370de411a7ce2c4d20910bed150b6.jpg" alt="App Screenshot" width="400"/></center>
+<center><img src="https://i.pinimg.com/1200x/d3/7a/7c/d37a7caf924e6ea998f485bf8d2f18ab.jpg" alt="App Screenshot" width="400"/></center>
 
 ✨ Tính Năng Nổi Bật (Key Features)
 1. 📦 Quản Lý Kho Thông Minh (Smart Inventory)
