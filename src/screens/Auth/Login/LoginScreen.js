@@ -6,7 +6,7 @@ import {
 import styles from './styles'; 
 
 // --- FIREBASE & GOOGLE IMPORTS ---
-import { auth, db } from '../../../../firebase/firebaseConfig';
+import { auth, db } from '../../../firebase/firebaseConfig';
 import { 
   signInWithEmailAndPassword, 
   GoogleAuthProvider, 
@@ -25,6 +25,7 @@ export default function LoginScreen({ navigation }) {
     GoogleSignin.configure({
       // Thay bằng Web Client ID của bạn
       webClientId: '713850148752-4ebjj3mt0kctk2ishpu166mno66e2b18.apps.googleusercontent.com', 
+      offlineAccess: true,
     });
   }, []);
 

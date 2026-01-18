@@ -5,11 +5,11 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { useState, useEffect } from 'react'; // Thêm useState, useEffect
 import { View, ActivityIndicator } from 'react-native'; // Thêm ActivityIndicator để hiện loading
 import { onAuthStateChanged } from 'firebase/auth'; // Lắng nghe đăng nhập
-import { auth } from '../../firebase/firebaseConfig'; // Đường dẫn file firebase của bạn
+import { auth } from '../firebase/firebaseConfig'; // Đường dẫn file firebase của bạn
 
 // Import các màn hình 
-import LoginScreen from '../screens/Auth/Login';     
-import RegisterScreen from '../screens/Auth/Register'; 
+import LoginScreen from '../screens/Auth/Login/LoginScreen';     
+import RegisterScreen from '../screens/Auth/Register/RegisterScreen'; 
 import HomeScreen from '../screens/Home/HomeScreen';
 import CategoriesScreen from '../screens/Categories/CategoriesScreen';
 import RecipeScreen from '../screens/Recipe/RecipeScreen';

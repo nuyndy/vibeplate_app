@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import styles from './styles'; 
 
-import { auth, db } from '../../../../firebase/firebaseConfig';
+import { auth, db } from '../../../firebase/firebaseConfig';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, Timestamp } from 'firebase/firestore'; 
 

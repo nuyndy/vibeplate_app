@@ -41,14 +41,13 @@ const styles = StyleSheet.create({
 
   // Nút bấm chính (Đăng nhập / Đăng ký)
   button: {
-    backgroundColor: '#FF6B6B', // Màu cam san hô chủ đạo (Rất hợp app nấu ăn)
+    backgroundColor: '#000000', // Màu cam san hô chủ đạo (Rất hợp app nấu ăn)
     height: 56,
     borderRadius: 16,           // Bo góc mềm mại
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
     // Đổ bóng nhẹ cho nút nổi lên
-    shadowColor: "#FF6B6B",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -68,9 +67,8 @@ const styles = StyleSheet.create({
 
   // Nút Google (Kế thừa style của nút chính nhưng đổi màu)
   googleButton: {
-    backgroundColor: '#DB4437', // Màu đỏ chuẩn Google
+    backgroundColor: '#000000', // Màu đỏ chuẩn Google
     marginTop: 15,
-    shadowColor: "#DB4437",
     flexDirection: 'row', // Để icon (nếu có) và chữ nằm ngang
   },
 
@@ -84,7 +82,7 @@ const styles = StyleSheet.create({
 
   // Chữ nhấn được (Đăng ký ngay / Đăng nhập)
   linkText: {
-    color: '#FF6B6B',
+    color: '#000000',
     fontWeight: 'bold',
     marginLeft: 5,
   },
