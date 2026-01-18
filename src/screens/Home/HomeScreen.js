@@ -1,23 +1,24 @@
-import React, { useLayoutEffect, useState, useEffect, useMemo } from "react"; 
-import { FlatList, Text, View, TouchableHighlight, Image, ActivityIndicator } from "react-native";
+import React, { useLayoutEffect, useState, useEffect, useMemo } from "react";
+import { FlatList, Text, View, TouchableHighlight, Image, ActivityIndicator, ScrollView } from "react-native";
 import styles from "./styles";
 import { getAllRecipes, getAllCategories } from "../../data/MockDataAPI";
 import MenuImage from "../../components/MenuImage/MenuImage";
-import HomeBanner from './HomeBanner'; 
+import HomeBanner from './HomeBanner';
 
 export default function HomeScreen(props) {
   const { navigation } = props;
-  
-  const [recipesData, setRecipesData] = useState([]);
-  const [bannerData, setBannerData] = useState([]); 
+
+  // recipesData bây giờ sẽ chứa danh sách các Category đã có món ăn bên trong
+  const [groupedData, setGroupedData] = useState([]); 
+  const [bannerData, setBannerData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Thêm biến state để theo dõi hành động cuộn của người dùng
-  const [isUserScrolling, setIsUserScrolling] = useState(false); // <--- MỚI
+  // Biến state theo dõi hành động cuộn (giữ nguyên logic cũ của bạn)
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: 'Home',
+      title: 'Trang chủ',
       headerLeft: () => (
         <MenuImage
           onPress={() => {
@@ -29,7 +30,7 @@ export default function HomeScreen(props) {
     });
   }, []);
 
-  // --- LẤY DỮ LIỆU ---
+  // --- LẤY VÀ XỬ LÝ DỮ LIỆU ---
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -38,20 +39,25 @@ export default function HomeScreen(props) {
           getAllCategories()
         ]);
 
-        const categoryMap = {};
-        categories.forEach(cat => {
-            categoryMap[cat.id] = cat.name;
+        // 1. Logic tạo Banner (Giữ nguyên: Lấy ngẫu nhiên 5 món)
+        const shuffledRecipes = [...recipes].sort(() => 0.5 - Math.random());
+        setBannerData(shuffledRecipes.slice(0, 5));
+
+        // 2. LOGIC MỚI: Nhóm món ăn theo thể loại
+        const grouped = categories.map(category => {
+          // Lọc ra các món ăn thuộc category này
+          const recipesInCategory = recipes.filter(recipe => recipe.categoryId === category.id);
+          
+          return {
+            ...category,
+            recipes: recipesInCategory
+          };
         });
 
-        const mergedRecipes = recipes.map(recipe => ({
-            ...recipe,
-            categoryName: categoryMap[recipe.categoryId] || "Unknown Category"
-        }));
+        // Chỉ lấy những thể loại nào có ít nhất 1 món ăn
+        const validCategories = grouped.filter(item => item.recipes.length > 0);
 
-        const shuffledRecipes = [...mergedRecipes].sort(() => 0.5 - Math.random());
-        
-        setBannerData(shuffledRecipes.slice(0, 5));
-        setRecipesData(mergedRecipes);
+        setGroupedData(validCategories);
 
       } catch (error) {
         console.error("Error fetching home data:", error);
@@ -67,28 +73,79 @@ export default function HomeScreen(props) {
     navigation.navigate("Recipe", { item });
   };
 
-  const renderRecipes = ({ item }) => (
-    <TouchableHighlight underlayColor="rgba(73,182,77,0.9)" onPress={() => onPressRecipe(item)}>
-      <View style={styles.container}>
-        <Image style={styles.photo} source={{ uri: item.photo_url }} />
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.category}>{item.categoryName}</Text>
+  // --- RENDER MỘT MÓN ĂN (Item con trong list ngang) ---
+  // --- RENDER MỘT MÓN ĂN (Chỉ hiện Ảnh + Tên) ---
+  const renderRecipeItem = ({ item }) => (
+    <TouchableHighlight 
+      underlayColor="rgba(73,182,77,0.9)" 
+      onPress={() => onPressRecipe(item)}
+    >
+      <View style={{ 
+          marginRight: 15, 
+          width: 140, // Độ rộng cố định để các món bằng nhau
+      }}>
+        
+        {/* 1. Hiển thị Ảnh */}
+        <Image 
+            style={{ 
+                width: 140, 
+                height: 140,       // Mình để ảnh vuông cho đẹp (hoặc bạn chỉnh thành 110 nếu thích chữ nhật)
+                borderRadius: 15   // Bo góc ảnh
+            }} 
+            source={{ uri: item.photo_url }} 
+        />
+        
+        {/* 2. Hiển thị Tên món */}
+        <Text style={{
+            marginTop: 8,          // Cách ảnh ra một chút cho thoáng
+            fontSize: 14, 
+            fontWeight: 'bold', 
+            color: '#333',
+            textAlign: 'center'    // Căn giữa tên món ăn dưới ảnh
+        }} numberOfLines={2}> 
+            {item.title} 
+        </Text>     
       </View>
     </TouchableHighlight>
   );
 
-  // 2. Cập nhật useMemo để truyền trạng thái cuộn xuống Banner
+  // --- RENDER MỘT THỂ LOẠI (Item cha trong list dọc) ---
+  const renderCategoryItem = ({ item }) => (
+    <View style={{ marginBottom: 20 }}>
+      {/* Tiêu đề thể loại */}
+      <Text style={{ 
+        fontSize: 20, 
+        fontWeight: 'bold', 
+        marginLeft: 15, 
+        marginBottom: 10,
+        color: '#333' 
+      }}>
+        {item.name}
+      </Text>
+
+      {/* List ngang chứa các món ăn của thể loại này */}
+      <FlatList
+        horizontal
+        data={item.recipes}
+        renderItem={renderRecipeItem}
+        keyExtractor={(recipe) => `${recipe.id}`}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingLeft: 15, paddingRight: 15 }}
+      />
+    </View>
+  );
+
+  // Memo header (Giữ nguyên logic của bạn)
   const memoizedHeader = useMemo(() => {
     return (
       <View style={styles.headerContainer}>
          <HomeBanner 
             bannerData={bannerData} 
             onPressRecipe={onPressRecipe} 
-            isUserScrolling={isUserScrolling} // <--- TRUYỀN XUỐNG: Báo cho banner biết user đang cuộn hay không
+            isUserScrolling={isUserScrolling}
          />
       </View>
     );
-  // Quan trọng: Thêm isUserScrolling vào mảng phụ thuộc để Header cập nhật khi state này đổi
   }, [bannerData, isUserScrolling]); 
 
   if (isLoading) {
@@ -101,18 +158,22 @@ export default function HomeScreen(props) {
 
   return (
     <View style={{flex: 1, backgroundColor: 'white'}}>
+      {/* FlatList Chính: Cuộn dọc, chứa các danh mục */}
       <FlatList
         vertical
         showsVerticalScrollIndicator={false}
-        numColumns={2}
-        data={recipesData}
-        renderItem={renderRecipes}
-        keyExtractor={(item) => `${item.id}`}
         
-        // 3. Thêm các sự kiện để bắt hành động cuộn của người dùng
-        onScrollBeginDrag={() => setIsUserScrolling(true)} // <--- MỚI: Bắt đầu chạm tay kéo -> Bật cờ
-        onScrollEndDrag={() => setIsUserScrolling(false)}  // <--- MỚI: Thả tay ra -> Tắt cờ
-        onMomentumScrollEnd={() => setIsUserScrolling(false)} // <--- MỚI: Trôi hết đà -> Tắt cờ
+        // Dữ liệu bây giờ là danh sách các Category
+        data={groupedData}
+        renderItem={renderCategoryItem}
+        keyExtractor={(item) => `${item.id}`}
+
+        // Quan trọng: Bỏ numColumns={2} vì chúng ta đang render list dọc
+        
+        // Logic bắt sự kiện cuộn (Giữ nguyên)
+        onScrollBeginDrag={() => setIsUserScrolling(true)}
+        onScrollEndDrag={() => setIsUserScrolling(false)}
+        onMomentumScrollEnd={() => setIsUserScrolling(false)}
 
         ListHeaderComponent={memoizedHeader}
       />

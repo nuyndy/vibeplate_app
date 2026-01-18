@@ -43,8 +43,15 @@ export default function DrawerContainer(props) {
           }}
         />
         <MenuButton
+          title="ĐI CHỢ"
+          source={require("../../../assets/icons/cart.png")} 
+          onPress={() => {
+            navigation.navigate("Main", { screen: "ShoppingList" });
+            navigation.closeDrawer();
+          }}
+        />
+        <MenuButton
           title="TRỢ LÝ AI"
-          // Tạm thời dùng icon search, hoặc bạn có thể tải icon 'chat.png' về assets
           source={require("../../../assets/icons/assistant.png")}
           onPress={() => {
             navigation.navigate("Main", { screen: "Chat" });

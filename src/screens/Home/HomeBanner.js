@@ -83,13 +83,13 @@ function HomeBanner({ bannerData, onPressRecipe, isUserScrolling }) {
                 key={i} 
                 style={[
                   styles.paginationDot, 
-                  { backgroundColor: i === bannerIndex ? '#2cd18a' : '#ddd' }
+                  { backgroundColor: i === bannerIndex ? '#000000' : '#ddd' }
                 ]} 
               />
            ))}
         </View>
         
-        <Text style={[styles.headerTitle, {marginTop: 20}]}>Danh sách món ăn</Text>
+        <Text style={[styles.headerTitle, {marginTop: 20}]}>Khám phá</Text>
     </View>
   );
 }

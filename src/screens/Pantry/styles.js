@@ -1,266 +1,160 @@
 import { StyleSheet, Dimensions } from "react-native";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get('window');
 
-// 🎨 BẢNG MÀU "BẾP NHÀ HIỆN ĐẠI" (Fresh & Cozy)
-const COLORS = {
-  // GIỮ NGUYÊN MÀU HOME: Xanh lá tươi (Rau củ/Thảo mộc)
-  primary: "#2cd18a",       
-  
-  // MÀU ẤM (Bổ sung): Vàng Cam (Vỏ bánh nướng/Phô mai) -> Tạo cảm giác thèm ăn
-  accent: "#F4A261",        
-  
-  // MÀU NỀN: Trắng Gạo (Rice White) - Sạch sẽ nhưng không lạnh lẽo như trắng tinh
-  background: "#FEFCF8",    
-  
-  // CARD: Trắng Sứ - Để làm nổi bật đồ ăn
-  cardBg: "#FFFFFF",        
-  
-  // TEXT: Xám Than Chì (Soft Charcoal) - Dịu mắt hơn đen tuyền
-  textMain: "#2D3436",      
-  textSub: "#95A5A6",       
-  
-  // INPUT: Xám ấm nhẹ
-  inputBg: "#F7F9F9",       
-  
-  danger: "#E74C3C",
-};
+// Kích thước chuẩn
+export const SCREEN_WIDTH = width;
+export const SCREEN_HEIGHT = height;
+export const ITEM_WIDTH = width * 0.85; 
+export const SPACING = (width - ITEM_WIDTH) / 2;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  
+  // =================================================
+  // 1. STYLE THẺ SẢN PHẨM (CARD)
+  // =================================================
+  cardWrapper: { 
+    width: ITEM_WIDTH, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    height: height * 0.75, // Vùng chứa cao để thẻ thoáng
   },
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  
+  // Bóng đổ phát sáng sau thẻ
+  glowBox: { 
+    position: 'absolute', width: '90%', height: '90%', 
+    borderRadius: 30, opacity: 0.3, top: 25, 
+    elevation: 15, shadowOffset: {width:0, height:15}, shadowOpacity:0.4, shadowRadius:20 
   },
 
-  // --- CARD SẢN PHẨM (Tinh tế & Có chiều sâu) ---
-  itemContainer: {
-    backgroundColor: COLORS.cardBg,
+  // Thẻ chính
+  cardInner: {
+    width: '95%', 
+    height: '92%', 
+    backgroundColor: '#fff', 
+    borderRadius: 28,
+    alignItems: 'center', 
     padding: 20,
-    marginHorizontal: 18,
-    marginBottom: 16,
-    borderRadius: 24,
-    
-    // ĐỔ BÓNG TỰ NHIÊN (Soft Ambient Shadow)
-    shadowColor: "#BCAAA4", 
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,      
-    shadowRadius: 12,
-    elevation: 4,
-    
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.02)",
+    elevation: 8, shadowColor: '#000', shadowOffset: {width:0, height:5}, shadowOpacity:0.1, shadowRadius:10
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  // Header thẻ (Trạng thái + Hạn SD)
+  cardHeader: { 
+    flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', 
+    marginBottom: 15, zIndex: 10 
+  },
+  statusPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  statusText: { fontWeight: 'bold', fontSize: 12 },
+  expiryText: { color: '#999', fontSize: 13, fontWeight: '600' },
+
+  // Ảnh sản phẩm (Hình chữ nhật ngang)
+  imageContainer: { 
+    width: '100%', height: 210, borderRadius: 18,   
+    backgroundColor: '#fff', marginBottom: 15, overflow: 'hidden', 
+  },
+  productImage: { width: '100%', height: '100%' },
+
+  // Tên sản phẩm
+  productName: { 
+    fontSize: 24, fontWeight: '800', color: '#2C3E50', 
+    textAlign: 'center', marginBottom: 5, 
+    height: 60, textAlignVertical: 'center' 
+  },
+  
+  // Số ngày còn lại
+  statsContainer: { marginBottom: 15 },
+  daysBlock: { alignItems: 'center' },
+  daysBig: { fontSize: 48, fontWeight: '900', lineHeight: 52 },
+  daysLabel: { fontSize: 12, fontWeight: 'bold', color: '#aaa', letterSpacing: 1, textTransform: 'uppercase' },
+
+  // Thanh tiến độ
+  progressContainer: { width: '100%', height: 8, backgroundColor: '#EFF2F5', borderRadius: 4, marginBottom: 20 },
+  progressBar: { height: '100%', borderRadius: 4 },
+
+  // --- NÚT HÀNH ĐỘNG (ĐẸP HƠN) ---
+  actionRow: { 
+    flexDirection: 'row', 
+    width: '100%', 
+    justifyContent: 'space-between', 
+    paddingTop: 20, 
+    borderTopWidth: 1, 
+    borderTopColor: '#f5f5f5', 
+    gap: 15, 
+  },
+
+  actionBtn: { 
+    flexDirection: 'row', 
     alignItems: 'center',
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: COLORS.textMain,
-    flex: 1,
-    letterSpacing: 0.2,
-  },
-  expiryDate: {
-    fontSize: 14,
-    color: COLORS.textSub,
-    marginTop: 4,
-    fontStyle: 'italic', 
-  },
-  
-  // Badge trạng thái
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    overflow: 'hidden',
+    justifyContent: 'center',
+    paddingVertical: 12, 
+    borderRadius: 16, 
+    flex: 1, 
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
   },
 
-  // --- ACTION BUTTONS (Đơn giản, Sạch sẽ) ---
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 15,
-    gap: 12,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    backgroundColor: "#F0F3F4", 
-  },
+  // Nút Sửa (Xanh)
+  btnEdit: { backgroundColor: '#E3F2FD' },
+  // Nút Xóa (Đỏ)
+  btnDelete: { backgroundColor: '#FFEBEE' },
 
-  // --- FAB BUTTON (+) ---
-  fab: {
-    position: "absolute",
-    width: 64,
-    height: 64,
-    alignItems: "center",
-    justifyContent: "center",
-    right: 24,
-    bottom: 34,
-    backgroundColor: COLORS.primary, 
-    borderRadius: 32,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  fabIcon: {
-    fontSize: 32,
-    color: "white",
-    marginTop: -2,
-  },
+  actionText: { fontWeight: '700', fontSize: 14, marginLeft: 8 },
 
-  // --- MODAL (Trượt lên từ dưới) ---
-  centeredView: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(45, 52, 54, 0.4)", 
-  },
-  modalView: {
-    width: "100%",
-    backgroundColor: COLORS.cardBg,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 30,
-    paddingBottom: 50,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 20,
-  },
-  modalTitle: {
-    marginBottom: 25,
-    textAlign: "center",
-    fontSize: 22,
-    fontWeight: "800",
-    color: COLORS.textMain,
-  },
-  
-  // --- INPUT (Hiện đại & Mềm mại) ---
-  input: {
-    width: "100%",
-    height: 56,
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 28,          
-    paddingHorizontal: 24,
-    marginBottom: 16,
-    fontSize: 16,
-    color: COLORS.textMain,
-    fontWeight: "500",
-  },
-  
-  modalButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 28,
-    paddingVertical: 16,
-    elevation: 0,
-    marginTop: 15,
-    width: "100%",
-    alignItems: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  textStyle: {
-    color: "white",
-    fontWeight: "700",
-    textAlign: "center",
-    fontSize: 17,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    padding: 10,
-    zIndex: 1,
-  },
-  closeText: {
-    color: COLORS.textSub,
-    fontWeight: "600",
-    fontSize: 15,
-  },
+  // =================================================
+  // 2. STYLE CAMERA (CỬA SỔ NGANG 16:9)
+  // =================================================
 
-  // --- CAMERA (Viền xanh đồng bộ) ---
-  locketContainer: {
-    flex: 1,
+  scanContainer: { 
+    flex: 1, 
     backgroundColor: '#000', 
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center', 
   },
-  locketFrame: {
-   // --- THAY ĐỔI Ở ĐÂY ---
-    width: width * 0.8,           // Rộng 80% màn hình
-    height: (width * 0.8) * 0.6,  // Cao = 60% của chiều rộng (Hình chữ nhật ngang)
-    // -----------------------
-    borderRadius: 30,             
-    overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: '#333',
-    position: 'relative',
-    backgroundColor: '#222',
-  },
-  locketCamera: {
-    flex: 1,
-  },
-  locketBackButton: {
-    marginTop: 50,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locketBackText: {
-    color: 'white',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  locketHint: {
-    color: '#ECF0F1',
-    fontSize: 15,
-    marginBottom: 20,
-    fontWeight: '500',
-    opacity: 0.9,
+  
+  scanText: {
+    color: '#fff', fontSize: 16, fontWeight: '500',
+    marginBottom: 30, textAlign: 'center', opacity: 0.9,
+    marginTop: -50 
   },
 
-  // --- ICONS MỚI (Đã được đưa vào trong ngoặc đúng cú pháp) ---
+  // Khung Camera cố định chiều cao -> Tạo hình chữ nhật ngang
+  scanWindow: {
+    width: SCREEN_WIDTH * 0.9, 
+    height: 220,               
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#fff',       
+    backgroundColor: '#222', 
+  },
+
+  scanCamera: { flex: 1, width: '100%', height: '100%' },
+
+  scanCloseBtn: {
+    marginTop: 50, width: 60, height: 60, borderRadius: 30, 
+    backgroundColor: 'rgba(255,255,255,0.2)', 
+    justifyContent: 'center', alignItems: 'center',
+  },
+  scanCloseIcon: { color: '#fff', fontSize: 24, marginTop: -2 },
+
+  // =================================================
+  // 3. UI KHÁC
+  // =================================================
   
-  // Style cho icon nhỏ trong nút Sửa/Xóa
-  iconSmall: {
-    width: 18,
-    height: 18,
-    marginRight: 8, 
-    resizeMode: 'contain',
+  fab: { 
+    position:'absolute', bottom: 40, alignSelf: 'center',
+    width:60, height:60, borderRadius:30, backgroundColor:'#2C3E50', 
+    justifyContent:'center', alignItems:'center', 
+    elevation:10, shadowColor:'#000', shadowOffset:{width:0, height:4}, shadowOpacity:0.3 
   },
-  // Style cho icon lớn hơn trong menu Modal
-  menuIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 12,
-    resizeMode: 'contain',
-  },
-  // Style cho container chứa icon và chữ trong nút để căn giữa
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-}); // <--- Đóng ngoặc kết thúc StyleSheet ở đây mới đúng
+  fabIcon: { color:'#fff', fontSize:32, marginTop:-3 },
+
+  modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center' },
+  modalBody: { width:'85%', backgroundColor:'#fff', borderRadius:25, padding:25, alignItems:'center' },
+  modalOpt: { width:'100%', padding:15, backgroundColor:'#F0F2F5', borderRadius:12, alignItems:'center' },
+  input: { width:'100%', backgroundColor:'#F0F2F5', padding:15, borderRadius:12, marginBottom:10 },
+  btnCancel: { flex:1, padding:15, alignItems:'center' },
+  btnSave: { flex:1, backgroundColor:'#2C3E50', padding:15, borderRadius:12, alignItems:'center' },
+});
 
 export default styles;

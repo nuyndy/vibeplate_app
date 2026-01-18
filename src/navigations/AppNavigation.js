@@ -14,11 +14,14 @@ import SearchScreen from '../screens/Search/SearchScreen';
 import IngredientsDetailsScreen from '../screens/IngredientsDetails/IngredientsDetailsScreen';
 import PantryScreen from '../screens/Pantry/PantryScreen';
 import ChatScreen from '../screens/Chat/ChatScreen';
+import DishNominationScreen from '../screens/DishNomination/DishNominationScreen';
 
 // --- IMPORT MỚI (AUTH & ACCOUNT) ---
 import LoginScreen from '../screens/Login/LoginScreen';
 import SignupScreen from '../screens/Signup/SignupScreen';
 import AccountScreen from '../screens/Account/AccountScreen';
+import InfoAccountScreen from '../screens/InfoAccount/InfoAccountScreen';
+import ShoppingListScreen from '../screens/ShoppingList/ShoppingListScreen';
 
 // --- IMPORT MÀN HÌNH GỢI Ý MỚI ---
 // Đảm bảo đường dẫn file đúng với nơi bạn vừa tạo file RecipeSuggestionScreen.js
@@ -47,14 +50,12 @@ function MainNavigator() {
       <Stack.Screen name='Chat' component={ChatScreen} />
       
       {/* Màn hình Account */}
-      <Stack.Screen name='Account' component={AccountScreen} /> 
+      <Stack.Screen name='Account' component={AccountScreen} />       
+      <Stack.Screen name='InfoAccount' component={InfoAccountScreen} />
+      <Stack.Screen name='ShoppingList' component={ShoppingListScreen} />
       
       {/* --- MÀN HÌNH GỢI Ý CÔNG THỨC (MỚI) --- */}
-      <Stack.Screen 
-        name='RecipeSuggestion' 
-        component={RecipeSuggestionScreen} 
-        options={{ headerShown: false }} // Ẩn header mặc định để dùng ảnh tràn viền đẹp hơn
-      />
+      <Stack.Screen name='DishNomination' component={DishNominationScreen} />
 
     </Stack.Navigator>
   );

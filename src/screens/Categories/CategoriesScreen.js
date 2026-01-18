@@ -17,11 +17,11 @@ export default function CategoriesScreen(props) {
 
   useLayoutEffect(() => {
     navigation.setOptions({
+      title: 'Danh mục',
       headerTitleStyle: {
         fontWeight: "bold",
         textAlign: "center",
         alignSelf: "center",
-        flex: 1,
       },
       headerLeft: () => (
         <MenuImage
@@ -76,7 +76,7 @@ export default function CategoriesScreen(props) {
         <Image style={styles.categoriesPhoto} source={{ uri: item.photo_url }} />
         <Text style={styles.categoriesName}>{item.name}</Text>
         {/* 3. Hiển thị số lượng đã được lấy sẵn trong state */}
-        <Text style={styles.categoriesInfo}>{item.recipeCount} recipes</Text>
+        <Text style={styles.categoriesInfo}>{item.recipeCount} món</Text>
       </View>
     </TouchableHighlight>
   );

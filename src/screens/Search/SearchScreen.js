@@ -1,9 +1,9 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
-import { FlatList, Text, View, Image, TouchableHighlight, Pressable, Keyboard } from "react-native";
+import React, { useEffect, useLayoutEffect, useState, useRef } from "react";
+import { FlatList, Text, View, Image, TouchableHighlight, Pressable, Keyboard, TextInput } from "react-native";
 import styles from "./styles";
 import MenuImage from "../../components/MenuImage/MenuImage";
-import { TextInput } from "react-native-gesture-handler";
-// Import Service mới
+
+// Import API
 import { 
   getRecipesByRecipeName, 
   getRecipesByCategoryName, 
@@ -17,10 +17,13 @@ export default function SearchScreen(props) {
   const [value, setValue] = useState("");
   const [data, setData] = useState([]);
   
-  // State lưu danh sách Category để tra cứu tên nhanh
+  // State lưu danh sách Category để tra cứu tên
   const [categoryMap, setCategoryMap] = useState({});
 
-  // 1. Load danh mục một lần duy nhất khi vào màn hình
+  // 1. Dùng useRef để điều khiển ô Input mà không cần render lại giao diện
+  const inputRef = useRef(null);
+
+  // Load danh mục một lần duy nhất
   useEffect(() => {
     const loadCategories = async () => {
         const cats = await getAllCategories();
@@ -31,8 +34,10 @@ export default function SearchScreen(props) {
     loadCategories();
   }, []);
 
+  // Cấu hình Header
   useLayoutEffect(() => {
     navigation.setOptions({
+      title: 'Tìm kiếm',
       headerLeft: () => (
         <MenuImage
           onPress={() => {
@@ -44,22 +49,34 @@ export default function SearchScreen(props) {
         <View style={styles.searchContainer}>
           <Image style={styles.searchIcon} source={require("../../../assets/icons/search.png")} />
           <TextInput
+            ref={inputRef} // <--- GẮN REF
             style={styles.searchInput}
-            onChangeText={handleSearch} // Hàm xử lý khi gõ phím
-            value={value}
-            placeholder="Search..." // Thêm placeholder cho đẹp
+            onChangeText={handleSearch} // Hàm xử lý khi gõ
+            placeholder="Search..." 
             placeholderTextColor="grey"
+            // QUAN TRỌNG: Không truyền props value={value} vào đây để tránh mất focus
           />
-          <Pressable onPress={() => handleSearch("")}>
+          <Pressable onPress={handleClearText}>
             <Image style={styles.searchIcon} source={require("../../../assets/icons/close.png")} />
           </Pressable>
         </View>
       ),
       headerRight: () => <View />,
     });
-  }, [value]); // Render lại header khi value thay đổi để update input
+  }, []); // <--- QUAN TRỌNG: Để mảng rỗng [], Header chỉ render 1 lần duy nhất lúc đầu
 
-  // 2. Hàm xử lý tìm kiếm (Logic chính)
+  // Hàm xử lý nút Xóa (X)
+  const handleClearText = () => {
+    setValue("");
+    handleSearch(""); // Xóa kết quả tìm kiếm
+    // Xóa chữ hiển thị trên ô input bằng lệnh trực tiếp
+    if (inputRef.current) {
+        inputRef.current.clear(); 
+        inputRef.current.focus(); // Focus lại để gõ tiếp
+    }
+  };
+
+  // Logic tìm kiếm
   const handleSearch = async (text) => {
     setValue(text);
 
@@ -68,23 +85,19 @@ export default function SearchScreen(props) {
       return;
     }
 
-    // Tối ưu: Chỉ tìm kiếm khi gõ nhiều hơn 1 ký tự để đỡ tốn tài nguyên Firebase
-    // Bạn có thể bỏ dòng if này nếu muốn tìm ngay lập tức
-    if (text.length < 2) return; 
+    // Có thể bỏ qua nếu ít hơn 2 ký tự (tùy chọn)
+    // if (text.length < 2) return; 
 
     try {
-      // Gọi 3 hàm tìm kiếm song song (Promise.all)
       const [byName, byCategory, byIngredient] = await Promise.all([
         getRecipesByRecipeName(text),
         getRecipesByCategoryName(text),
         getRecipesByIngredientName(text)
       ]);
 
-      // Gộp kết quả lại
       const combined = [...byName, ...byCategory, ...byIngredient];
 
-      // Lọc trùng lặp (Dedup) dựa trên ID
-      // Vì Object trả về từ Firebase là các instance khác nhau, ta không dùng Set trực tiếp được
+      // Lọc trùng lặp
       const uniqueIds = new Set();
       const uniqueRecipes = combined.filter(element => {
         const isDuplicate = uniqueIds.has(element.id);
@@ -107,7 +120,6 @@ export default function SearchScreen(props) {
       <View style={styles.container}>
         <Image style={styles.photo} source={{ uri: item.photo_url }} />
         <Text style={styles.title}>{item.title}</Text>
-        {/* Tra cứu tên Category từ Map đã load ở bước 1 */}
         <Text style={styles.category}>
             {categoryMap[item.categoryId] || "Unknown Category"}
         </Text>
@@ -124,8 +136,8 @@ export default function SearchScreen(props) {
         data={data} 
         renderItem={renderRecipes} 
         keyExtractor={(item) => `${item.id}`} 
-        // Thêm tính năng tắt bàn phím khi cuộn danh sách
-        onScroll={() => Keyboard.dismiss()} 
+        // Tắt bàn phím khi vuốt danh sách
+        onScrollBeginDrag={() => Keyboard.dismiss()} 
       />
     </View>
   );

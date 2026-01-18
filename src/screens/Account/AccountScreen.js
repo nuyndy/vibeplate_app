@@ -1,259 +1,223 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView } from 'react-native';
-// Đảm bảo đường dẫn này đúng với dự án của bạn
+import React, { useLayoutEffect } from 'react';
+import { 
+  View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, SafeAreaView 
+} from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
+
+// --- BẢNG MÀU ĐỒNG BỘ ---
+const COLORS = {
+  primary: '#000000',     
+  primaryLight: '#d6dbd9', 
+  secondary: '#FFC529',   
+  bg: '#F8F9FD',          
+  card: '#FFFFFF',        
+  textMain: '#1A1D26',    
+  textSub: '#A0A5B9',     
+  danger: '#584343',      
+  dangerBg: '#d3cbcb',    
+};
 
 export default function AccountScreen({ navigation }) {
 
-  const interests = ["Eat Clean", "Món Nhật", "Đồ ngọt", "Healthy", "BBQ"];
-  
-  // Cấu hình Header có nút Menu
-  React.useLayoutEffect(() => {
+  const interests = ["Healthy", "Món Nhật", "BBQ"];
+  const allergies = ["Đậu phộng", "Sữa"];
+
+  useLayoutEffect(() => {
     navigation.setOptions({
-      title: 'Hồ sơ của tôi',
+      title: '', 
+      headerStyle: { backgroundColor: COLORS.bg, shadowColor: 'transparent', elevation: 0 },
       headerLeft: () => (
-        <MenuImage onPress={() => navigation.openDrawer()} />
-      ),
-      headerRight: () => <View />,
+        <View style={{ marginLeft: 10 }}>
+           <MenuImage onPress={() => navigation.openDrawer()} />
+        </View>
+      )
     });
   }, []);
 
-  // Xử lý đăng xuất
   const handleLogout = () => {
-    Alert.alert(
-      "Đăng xuất",
-      "Bạn có chắc chắn muốn đăng xuất không?",
-      [
-        { text: "Hủy", style: "cancel" },
-        { 
-          text: "Đồng ý", 
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Login' }],
-            });
-          }
-        }
-      ]
-    );
+    Alert.alert("Đăng xuất", "Hẹn gặp lại bạn nhé?", [
+      { text: "Hủy", style: "cancel" },
+      { text: "Đăng xuất", onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }) }
+    ]);
   };
 
+  const StatItem = ({ number, label }) => (
+    <View style={{ alignItems: 'center', flex: 1 }}> 
+      <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textMain }}>{number}</Text>
+      <Text style={{ fontSize: 12, color: COLORS.textSub, marginTop: 4 }}>{label}</Text>
+    </View>
+  );
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      
-      {/* --- PHẦN 1: HEADER PROFILE --- */}
-      <View style={styles.profileHeader}>
-        <Image 
-          source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' }} 
-          style={styles.avatar} 
-        />
-        <Text style={styles.name}>Admin VibePlate</Text>
-        <Text style={styles.email}>admin@vibeplate.com</Text>
-      </View>
-
-      {/* --- PHẦN 2: SỞ THÍCH --- */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Sở thích ẩm thực</Text>
-        <View style={styles.tagsContainer}>
-          {interests.map((item, index) => (
-            <View key={index} style={styles.tag}>
-              <Text style={styles.tagText}>{item}</Text>
-            </View>
-          ))}
-          <TouchableOpacity style={[styles.tag, styles.addTag]}>
-             <Text style={[styles.tagText, {color: '#2cd18a'}]}>+ Thêm</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* --- PHẦN 3: NÚT GỢI Ý MÓN ĂN (QUAN TRỌNG) --- */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Gợi ý món ăn</Text>
-        <Text style={styles.hintText}>
-          Dựa trên nguyên liệu có trong tủ lạnh của bạn
-        </Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         
-        {/* Nút bấm chuyển sang màn hình RecipeSuggestion */}
-        <TouchableOpacity 
-          style={styles.suggestionBtn} 
-          onPress={() => navigation.navigate('RecipeSuggestion')}
-        >
-          <Image 
-            source={{uri: 'https://cdn-icons-png.flaticon.com/512/3565/3565418.png'}} 
-            style={styles.btnIcon} 
-          />
-          <View style={{flex: 1}}>
-            <Text style={styles.btnTitle}>Xem thực đơn hôm nay</Text>
-            <Text style={styles.btnSubtitle}>Nhấn để xem công thức chi tiết</Text>
+        {/* --- 1. PROFILE CARD & STATS --- */}
+        <View style={styles.profileSection}>
+          <View style={styles.avatarContainer}>
+            <Image 
+              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png' }} 
+              style={styles.avatar} 
+            />
+            <View style={styles.editBadge}>
+              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/1159/1159633.png'}} style={{width: 12, height: 12, tintColor: '#fff'}} />
+            </View>
           </View>
-          <Text style={styles.arrow}>›</Text>
+          
+          <Text style={styles.name}>VibePlate Chef</Text>
+          <Text style={styles.email}>chef@vibeplate.com</Text>
+
+          <View style={styles.statsContainer}>
+             <StatItem number="25" label="Món đã lưu" />
+             <View style={styles.dividerVertical} />
+             <StatItem number="12" label="Đã nấu" />
+          </View>
+        </View>
+
+        {/* --- 2. BANNER --- */}
+        <TouchableOpacity 
+          style={styles.bannerBtn} 
+          onPress={() => navigation.navigate('DishNomination')}
+        >
+          <View style={{flex: 1}}>
+             <Text style={styles.bannerTitle}>Đóng góp công thức 👨‍🍳</Text>
+             <Text style={styles.bannerSub}>Chia sẻ món ngon của bạn tới cộng đồng ngay!</Text>
+          </View>
+          <View style={styles.bannerIconBox}>
+             <Text style={{fontSize: 24}}>📝</Text>
+          </View>
         </TouchableOpacity>
-      </View>
 
-      {/* --- PHẦN 4: THÔNG TIN CHUNG --- */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Thông tin chung</Text>
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Ngày tham gia:</Text>
-          <Text style={styles.value}>15/01/2026</Text>
+        {/* --- 3. SỞ THÍCH --- */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+             <Text style={styles.cardTitle}>Hồ sơ khẩu vị</Text>
+             <TouchableOpacity><Text style={styles.linkText}>Sửa</Text></TouchableOpacity>
+          </View>
+
+          <View style={{marginBottom: 15}}>
+             <Text style={styles.label}>Yêu thích ❤️</Text>
+             <View style={styles.tagRow}>
+                {interests.map((item, index) => (
+                  <View key={index} style={styles.tagGreen}>
+                    <Text style={styles.textGreen}>{item}</Text>
+                  </View>
+                ))}
+                <TouchableOpacity style={styles.addTagBtn}>
+                   <Text style={{color: COLORS.primary}}>+ Thêm</Text>
+                </TouchableOpacity>
+             </View>
+          </View>
+
+          <View>
+             <Text style={styles.label}>Dị ứng / Kiêng kỵ ⚠️</Text>
+             <View style={styles.tagRow}>
+                {allergies.map((item, index) => (
+                  <View key={index} style={styles.tagRed}>
+                    <Text style={styles.textRed}>{item}</Text>
+                  </View>
+                ))}
+             </View>
+          </View>
         </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Cấp bậc:</Text>
-          <Text style={styles.value}>Thành viên VIP</Text>
+
+        {/* --- 4. TÀI KHOẢN & CÀI ĐẶT --- */}
+        <View style={styles.card}>
+           <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => navigation.navigate('InfoAccount')}
+           >
+              <View style={[styles.menuIcon, {backgroundColor: COLORS.primaryLight}]}>
+                 <Image 
+                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} 
+                    style={{width: 20, height: 20, tintColor: COLORS.primary}}
+                 />
+              </View>
+              <Text style={styles.menuText}>Thông tin tài khoản</Text>
+              <Text style={styles.arrow}>›</Text>
+           </TouchableOpacity>
+           <TouchableOpacity 
+                style={[styles.menuItem, {borderBottomWidth: 0}]} 
+                onPress={handleLogout}
+           >
+              <View style={[styles.menuIcon, {backgroundColor: COLORS.dangerBg}]}>
+                 <Image 
+                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png'}} 
+                    style={{width: 20, height: 20, tintColor: COLORS.danger}}
+                 />
+              </View>
+              <Text style={[styles.menuText, {color: COLORS.danger}]}>Đăng xuất</Text>
+           </TouchableOpacity>
         </View>
-      </View>
 
-      {/* --- PHẦN 5: ĐĂNG XUẤT --- */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Đăng xuất ngay</Text>
-      </TouchableOpacity>
+        <Text style={styles.versionText}>VibePlate v1.0.2</Text>
 
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f4f6f8',
+  container: { padding: 20, paddingBottom: 40 },
+  profileSection: { alignItems: 'center', marginBottom: 25 },
+  avatarContainer: {
+    position: 'relative', marginBottom: 15,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2, shadowRadius: 10, elevation: 5,
   },
-  contentContainer: {
-    alignItems: 'center',
-    paddingTop: 30,
-    paddingBottom: 50,
+  avatar: { width: 110, height: 110, borderRadius: 55, borderWidth: 4, borderColor: '#fff' },
+  editBadge: {
+    position: 'absolute', bottom: 0, right: 5, backgroundColor: COLORS.primary,
+    padding: 8, borderRadius: 20, borderWidth: 3, borderColor: '#fff',
   },
-  profileHeader: {
-    alignItems: 'center',
-    marginBottom: 20,
+  name: { fontSize: 24, fontWeight: '800', color: COLORS.textMain, marginBottom: 2 },
+  email: { fontSize: 14, color: COLORS.textSub, marginBottom: 20 },
+  statsContainer: {
+    flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16,
+    paddingVertical: 15, paddingHorizontal: 20, width: '100%',
+    justifyContent: 'space-around', alignItems: 'center',
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 10,
-    borderWidth: 3,
-    borderColor: '#2cd18a',
+  dividerVertical: { width: 1, height: 40, backgroundColor: '#F0F0F0' },
+  bannerBtn: {
+    flexDirection: 'row', backgroundColor: COLORS.textMain, borderRadius: 20,
+    padding: 20, alignItems: 'center', marginBottom: 20,
+    shadowColor: COLORS.textMain, shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2, shadowRadius: 10, elevation: 4,
   },
-  name: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
+  bannerTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+  bannerSub: { color: '#ccc', fontSize: 12 },
+  bannerIconBox: {
+    backgroundColor: 'rgba(255,255,255,0.2)', width: 44, height: 44,
+    borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginLeft: 15,
   },
-  email: {
-    fontSize: 14,
-    color: '#666',
+  card: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 20,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03, shadowRadius: 5, elevation: 2,
   },
-  section: {
-    width: '90%',
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 15,
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textMain },
+  linkText: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
+  label: { fontSize: 13, color: COLORS.textSub, marginBottom: 10, fontWeight: '600' },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tagGreen: { backgroundColor: COLORS.primaryLight, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  textGreen: { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
+  tagRed: { backgroundColor: COLORS.dangerBg, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  textRed: { color: COLORS.danger, fontWeight: '600', fontSize: 13 },
+  addTagBtn: {
+    borderWidth: 1, borderColor: COLORS.primary, borderStyle: 'dashed',
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingBottom: 10,
-    color: '#2cd18a',
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 15,
+    borderBottomWidth: 1, borderBottomColor: '#F5F6FA',
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+  menuIcon: {
+    width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 15,
   },
-  label: {
-    color: '#666',
-    fontSize: 15,
-  },
-  value: {
-    fontWeight: '600',
-    color: '#333',
-    fontSize: 15,
-  },
-  
-  // Style cho phần Tags
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  tag: {
-    backgroundColor: '#e6f7f0',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  addTag: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#2cd18a',
-    borderStyle: 'dashed',
-  },
-  tagText: {
-    color: '#2cd18a',
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-
-  // Style cho nút Gợi ý (Quan trọng)
-  hintText: {
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  suggestionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e6f7f0', 
-    padding: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#c2ebd9',
-  },
-  btnIcon: {
-    width: 40,
-    height: 40,
-    marginRight: 15,
-  },
-  btnTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2cd18a',
-  },
-  btnSubtitle: {
-    fontSize: 12,
-    color: '#555',
-  },
-  arrow: {
-    fontSize: 28,
-    color: '#2cd18a',
-    fontWeight: '200',
-    paddingBottom: 5,
-  },
-
-  // Style nút Logout
-  logoutButton: {
-    width: '90%',
-    backgroundColor: '#ff4d4d',
-    padding: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 10,
-    elevation: 3,
-  },
-  logoutText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  menuText: { flex: 1, fontSize: 15, fontWeight: '500', color: COLORS.textMain },
+  arrow: { fontSize: 20, color: '#ccc' },
+  versionText: { textAlign: 'center', color: '#ccc', fontSize: 12, marginTop: 10 },
 });
