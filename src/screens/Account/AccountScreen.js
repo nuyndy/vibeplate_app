@@ -88,12 +88,12 @@ export default function AccountScreen({ navigation }) {
     ]);
   };
 
-  const StatItem = ({ number, label }) => (
-    <View style={{ alignItems: 'center', flex: 1 }}> 
-      <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textMain }}>{number}</Text>
-      <Text style={{ fontSize: 12, color: COLORS.textSub, marginTop: 4 }}>{label}</Text>
-    </View>
-  );
+  const StatItem = ({ number, label, onPress }) => (
+  <TouchableOpacity onPress={onPress} style={{ alignItems: 'center', flex: 1 }}>
+    <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textMain }}>{number}</Text>
+    <Text style={{ fontSize: 12, color: COLORS.textSub, marginTop: 4 }}>{label}</Text>
+  </TouchableOpacity>
+);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
@@ -118,9 +118,17 @@ export default function AccountScreen({ navigation }) {
           <Text style={styles.email}>{user?.email || "No Email"}</Text>
 
           <View style={styles.statsContainer}>
-             <StatItem number="25" label="Món đã lưu" />
-             <View style={styles.dividerVertical} />
-             <StatItem number="12" label="Đã nấu" />
+            <StatItem 
+              number="25" 
+              label="Món đã lưu" 
+              onPress={() => navigation.navigate('SavedDishes')}
+            />
+            <View style={styles.dividerVertical} />
+            <StatItem 
+              number="12" 
+              label="Món đã đóng góp" 
+              onPress={() => navigation.navigate('ContributedDishes')}
+            />
           </View>
         </View>
 

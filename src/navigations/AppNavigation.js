@@ -25,6 +25,8 @@ import DishNominationScreen from '../screens/DishNomination/DishNominationScreen
 // --- IMPORT MỚI (AUTH & ACCOUNT) ---
 import AccountScreen from '../screens/Account/AccountScreen';
 import InfoAccountScreen from '../screens/InfoAccount/InfoAccountScreen';
+import SavedDishesScreen from '../screens/Account/SavedDishesScreen';
+import ContributedDishesScreen from '../screens/Account/ContributedDishesScreen';
 import ShoppingListScreen from '../screens/ShoppingList/ShoppingListScreen';
 
 // --- IMPORT MÀN HÌNH GỢI Ý MỚI ---
@@ -67,6 +69,8 @@ function MainNavigator() {
       
       {/* Màn hình Account */}
       <Stack.Screen name='Account' component={AccountScreen} />       
+      <Stack.Screen name="SavedDishes" component={SavedDishesScreen} />
+      <Stack.Screen name="ContributedDishes" component={ContributedDishesScreen} />
       <Stack.Screen name='InfoAccount' component={InfoAccountScreen} />
       <Stack.Screen name='ShoppingList' component={ShoppingListScreen} />
       
@@ -75,6 +79,7 @@ function MainNavigator() {
 
       {/* Quản lý */}
       <Stack.Screen name='AdminDataManagement' component={AdminDataManagement} />
+      
     </Stack.Navigator>
   );
 }
