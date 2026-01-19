@@ -50,7 +50,6 @@ function HomeBanner({ bannerData, onPressRecipe, isUserScrolling }) {
 
   return (
     <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Hôm nay ăn gì?</Text>
         
         <ScrollView
           ref={bannerRef}
@@ -68,9 +67,6 @@ function HomeBanner({ bannerData, onPressRecipe, isUserScrolling }) {
               >
                 <View style={styles.bannerContainer}>
                   <Image style={styles.bannerPhoto} source={{ uri: item.photo_url }} />
-                  <View style={styles.bannerInfo}>
-                     <Text style={styles.bannerTitle}>{item.title}</Text>
-                  </View>
                 </View>
               </TouchableHighlight>
             </View>
@@ -88,8 +84,6 @@ function HomeBanner({ bannerData, onPressRecipe, isUserScrolling }) {
               />
            ))}
         </View>
-        
-        <Text style={[styles.headerTitle, {marginTop: 20}]}>Khám phá</Text>
     </View>
   );
 }

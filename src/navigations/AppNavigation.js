@@ -23,8 +23,6 @@ import ChatScreen from '../screens/Chat/ChatScreen';
 import DishNominationScreen from '../screens/DishNomination/DishNominationScreen';
 
 // --- IMPORT MỚI (AUTH & ACCOUNT) ---
-import LoginScreen from '../screens/Login/LoginScreen';
-import SignupScreen from '../screens/Signup/SignupScreen';
 import AccountScreen from '../screens/Account/AccountScreen';
 import InfoAccountScreen from '../screens/InfoAccount/InfoAccountScreen';
 import ShoppingListScreen from '../screens/ShoppingList/ShoppingListScreen';
@@ -33,16 +31,10 @@ import ShoppingListScreen from '../screens/ShoppingList/ShoppingListScreen';
 // Đảm bảo đường dẫn file đúng với nơi bạn vừa tạo file RecipeSuggestionScreen.js
 import RecipeSuggestionScreen from '../screens/RecipeSuggestion/RecipeSuggestionScreen'; 
 
-const Stack = createStackNavigator();
+//quản lý
+import AdminDataManagement from '../screens/Manage/AdminDataManagement';
 
-function AuthNavigator() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name='Login' component={LoginScreen} />
-      <Stack.Screen name='Register' component={RegisterScreen} />
-    </Stack.Navigator>
-  );
-}
+const Stack = createStackNavigator();
 
 // --- MAIN NAVIGATOR (Bên trong sau khi đăng nhập) ---
 function AuthNavigator() {
@@ -54,7 +46,6 @@ function AuthNavigator() {
   );
 }
 
->>>>>>> fix-android-login
 function MainNavigator() {
   return (
     <Stack.Navigator
@@ -82,6 +73,8 @@ function MainNavigator() {
       {/* --- MÀN HÌNH GỢI Ý CÔNG THỨC (MỚI) --- */}
       <Stack.Screen name='DishNomination' component={DishNominationScreen} />
 
+      {/* Quản lý */}
+      <Stack.Screen name='AdminDataManagement' component={AdminDataManagement} />
     </Stack.Navigator>
   );
 }
@@ -118,7 +111,7 @@ export default function AppContainer() {
   if (initializing) {
     return (
       <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
-        <ActivityIndicator size="large" color="#2cd18a"/>
+        <ActivityIndicator size="large" color="#000000"/>
       </View>
     );
   }

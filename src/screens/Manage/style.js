@@ -1,0 +1,63 @@
+import { StyleSheet } from 'react-native';
+
+export const COLORS = {
+  primary: '#000000',
+  secondary: '#FFC529',
+  bg: '#F8F9FD',
+  card: '#FFFFFF',
+  textMain: '#1A1D26',
+  textSub: '#A0A5B9',
+  danger: '#D9534F',
+  edit: '#4A90E2',
+  inputBg: '#F0F2F5',
+  approve: '#28A745',
+};
+
+export const styles = StyleSheet.create({
+  header: { 
+    paddingHorizontal: 20, 
+    paddingVertical: 15, 
+    backgroundColor: '#fff', 
+    borderBottomWidth: 1, 
+    borderColor: '#eee' 
+  },
+  searchBar: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F3F5',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 16,
+    color: COLORS.textMain,
+    padding: 0
+  },
+  tabContainer: { paddingVertical: 10, backgroundColor: '#fff' },
+  tab: { paddingVertical: 8, paddingHorizontal: 16, marginHorizontal: 5, borderRadius: 20, backgroundColor: '#F0F0F0' },
+  activeTab: { backgroundColor: COLORS.primary },
+  tabText: { fontWeight: '600', color: '#666', fontSize: 12 },
+  activeTabText: { color: '#fff' },
+  card: { flexDirection: 'row', backgroundColor: '#fff', padding: 10, marginVertical: 6, borderRadius: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  cardImage: { width: 50, height: 50, borderRadius: 8, backgroundColor: '#eee' },
+  cardContent: { flex: 1, marginLeft: 12 },
+  cardTitle: { fontWeight: 'bold', fontSize: 14, color: COLORS.textMain },
+  cardSub: { fontSize: 12, color: COLORS.textSub, marginTop: 2 },
+  cardActions: { flexDirection: 'row', gap: 8 },
+  actionBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6 },
+  btnText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  fab: { position: 'absolute', bottom: 30, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.secondary, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5, elevation: 5 },
+  fabText: { fontSize: 30, color: '#fff', fontWeight: 'bold', marginTop: -2 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, height: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold' },
+  inputGroup: { marginBottom: 15 },
+  label: { fontSize: 12, color: COLORS.textSub, marginBottom: 5, fontWeight: '600' },
+  input: { backgroundColor: COLORS.inputBg, borderRadius: 8, padding: 12, fontSize: 14, color: COLORS.textMain },
+  saveBtn: { backgroundColor: COLORS.primary, padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  saveBtnText: { color: '#fff', fontWeight: 'bold' },
+});

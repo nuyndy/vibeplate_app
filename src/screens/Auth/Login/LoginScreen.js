@@ -29,6 +29,42 @@ export default function LoginScreen({ navigation }) {
     });
   }, []);
 
+  // --- HÀM TẠO DỮ LIỆU USER (CẤU TRÚC CHUẨN) ---
+  const checkAndCreateUserData = async (user) => {
+    try {
+      // Vẫn dùng email làm Document ID để dễ tìm kiếm
+      const userDocId = user.email.toLowerCase(); 
+      const userRef = doc(db, "users", userDocId);
+      const docSnap = await getDoc(userRef);
+
+      // Chỉ tạo mới nếu chưa có dữ liệu
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {          
+          // 2. Email
+          email: user.email,
+          
+          // 3. Tên hiển thị
+          displayName: user.displayName || "Người dùng mới",
+          
+          // 4. Avatar (Lưu ý: field tên là photo_url)
+          photo_url: user.photoURL || "https://i.pravatar.cc/300",
+          
+          // 5. Phân quyền (Mặc định là user)
+          role: "user", 
+          
+          // 6. Ngày tạo
+          createdAt: Timestamp.now(),
+        });
+        console.log("--> Đã tạo User mới thành công!");
+      } else {
+        console.log("--> User cũ đã có dữ liệu.");
+      }
+    } catch (error) {
+      console.error("Lỗi khi tạo user data:", error);
+      Alert.alert("Lỗi dữ liệu", "Không thể khởi tạo thông tin người dùng.");
+    }
+  };
+
   // --- HÀM 1: ĐĂNG NHẬP THƯỜNG ---
   const handleLogin = async () => {
     if (email === '' || password === '') {
@@ -37,9 +73,10 @@ export default function LoginScreen({ navigation }) {
     }
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // Kiểm tra data user thường (đề phòng trường hợp tạo acc nhưng chưa có data)
+      await checkAndCreateUserData(userCredential.user);
       console.log("Đăng nhập thường thành công");
-      // App tự chuyển trang nhờ AuthListener bên ngoài
     } catch (error) {
       Alert.alert('Lỗi đăng nhập', error.message);
     } finally {
@@ -47,99 +84,51 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  // --- HÀM 2: XỬ LÝ DỮ LIỆU USER SAU KHI LOGIN ---
-  // Hàm này dùng chung để tạo dữ liệu nếu user chưa tồn tại
-  const checkAndCreateUserData = async (user) => {
-    try {
-      // 1. Xác định ID là Email
-      const userDocId = user.email.toLowerCase();
-      const userRef = doc(db, "users", userDocId);
-      
-      // 2. Kiểm tra xem user đã có trong Firestore chưa
-      const docSnap = await getDoc(userRef);
-
-      // 3. Nếu CHƯA CÓ -> Tạo mới (Giống hệt logic bên Register)
-      if (!docSnap.exists()) {
-        await setDoc(userRef, {
-          id: userDocId,
-          uid: user.uid,
-          email: user.email,
-          fullName: user.displayName || "User Google",
-          photoURL: user.photoURL || "https://i.pravatar.cc/300",
-          
-          // Khởi tạo khung dữ liệu rỗng (để update sau)
-          myFridge: [],
-          favorites: [],
-          preferences: {
-            dietType: "none",
-            allergies: [],
-            cookingSkill: "beginner"
-          },
-          createdAt: Timestamp.now(),
-        });
-        console.log("Đã khởi tạo dữ liệu cho User Google mới!");
-      } else {
-        console.log("User cũ đã có dữ liệu, không cần tạo lại.");
-      }
-    } catch (error) {
-      console.error("Lỗi khi tạo user data:", error);
-      Alert.alert("Lỗi dữ liệu", "Không thể khởi tạo thông tin người dùng.");
-    }
-  };
-
-  // --- HÀM 3: ĐĂNG NHẬP GOOGLE ---
+  // --- HÀM 2: ĐĂNG NHẬP GOOGLE ---
+  // --- HÀM 2: ĐĂNG NHẬP GOOGLE ---
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      let userCredential;
-
-      // 👉 TRƯỜNG HỢP 1: CHẠY TRÊN WEB
+      // A. CHẠY TRÊN WEB
       if (Platform.OS === 'web') {
         const provider = new GoogleAuthProvider();
-        // Mở cửa sổ Popup đăng nhập Google của trình duyệt
-        userCredential = await signInWithPopup(auth, provider);
+        // Thêm dòng này để Web cũng bắt chọn tài khoản
+        provider.setCustomParameters({ prompt: 'select_account' }); 
+        await signInWithPopup(auth, provider);
+        // ... (phần xử lý user như cũ)
       } 
       
-      // 👉 TRƯỜNG HỢP 2: CHẠY TRÊN MOBILE (Android/iOS)
+      // B. CHẠY TRÊN MOBILE (Android/iOS)
       else {
         await GoogleSignin.hasPlayServices();
+        
+        // --- 🔥 THÊM ĐOẠN NÀY ĐỂ LUÔN CHO CHỌN TÀI KHOẢN ---
+        try {
+          await GoogleSignin.signOut();
+        } catch (error) {
+          // Bỏ qua lỗi nếu chưa đăng nhập trước đó
+        }
+        // ----------------------------------------------------
+
         const userInfo = await GoogleSignin.signIn();
-        const idToken = userInfo.data.idToken; 
+        const idToken = userInfo.data?.idToken || userInfo.idToken; 
+        
+        if (!idToken) throw new Error('Không tìm thấy Google ID Token');
+
         const googleCredential = GoogleAuthProvider.credential(idToken);
-        userCredential = await signInWithCredential(auth, googleCredential);
+        const userCredential = await signInWithCredential(auth, googleCredential);
+        
+        // Gọi hàm tạo data rút gọn
+        await checkAndCreateUserData(userCredential.user);
+        
+        Alert.alert("Chào mừng", `Xin chào ${userCredential.user.displayName}!`);
       }
-
-      const user = userCredential.user;
-
-      // --- PHẦN DƯỚI NÀY GIỮ NGUYÊN (Lưu vào Firestore) ---
-      const userDocId = user.email.toLowerCase();
-      const userDocRef = doc(db, "users", userDocId);
-      const docSnap = await getDoc(userDocRef);
-
-      if (!docSnap.exists()) {
-        await setDoc(userDocRef, {
-          id: userDocId,
-          uid: user.uid,
-          email: user.email,
-          fullName: user.displayName || "Người dùng Google",
-          photoURL: user.photoURL,
-          myFridge: [],
-          favorites: [],
-          preferences: {
-            dietType: "none",
-            allergies: [],
-            cookingSkill: "beginner"
-          },
-          createdAt: Timestamp.now(),
-        });
-      }
-
-      Alert.alert("Chào mừng", `Xin chào ${user.displayName}!`);
-      // navigation.navigate('Home'); // Nhớ mở dòng này khi có trang Home
 
     } catch (error) {
       console.log(error);
-      Alert.alert("Lỗi đăng nhập", error.message);
+      if (error.code !== 'RNGoogleSignin:SIGN_IN_CANCELLED') {
+        Alert.alert("Lỗi Google Login", error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -179,7 +168,7 @@ export default function LoginScreen({ navigation }) {
         onPress={handleGoogleLogin}
         disabled={loading}
       >
-        <Text style={styles.buttonText}>G  Tiếp tục với Google</Text>
+        <Text style={styles.buttonText}>G   Tiếp tục với Google</Text>
       </TouchableOpacity>
 
       <TouchableOpacity 

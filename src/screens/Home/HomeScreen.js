@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useState, useEffect, useMemo } from "react";
-import { FlatList, Text, View, TouchableHighlight, Image, ActivityIndicator, ScrollView } from "react-native";
+import { FlatList, Text, View, TouchableHighlight, Image, ActivityIndicator, TouchableOpacity } from "react-native";
 import styles from "./styles";
 import { getAllRecipes, getAllCategories } from "../../data/MockDataAPI";
 import MenuImage from "../../components/MenuImage/MenuImage";
@@ -8,29 +8,36 @@ import HomeBanner from './HomeBanner';
 export default function HomeScreen(props) {
   const { navigation } = props;
 
-  // recipesData bây giờ sẽ chứa danh sách các Category đã có món ăn bên trong
-  const [groupedData, setGroupedData] = useState([]); 
+  const [groupedData, setGroupedData] = useState([]);
   const [bannerData, setBannerData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Biến state theo dõi hành động cuộn (giữ nguyên logic cũ của bạn)
   const [isUserScrolling, setIsUserScrolling] = useState(false);
+
+  // Mood + Weather + Random
+  const [mood, setMood] = useState(null);
+  const [weather, setWeather] = useState({ temp: 27, description: "Nắng nhẹ" });
+  const [randomSuggestion, setRandomSuggestion] = useState(null);
+
+  // Mood icon data
+  const moodOptions = [
+    { key: "happy", label: "Vui vẻ", icon: "https://cdn-icons-png.flaticon.com/512/742/742920.png" },
+    { key: "sad", label: "Buồn chán", icon: "https://cdn-icons-png.flaticon.com/512/742/742927.png" },
+    { key: "tired", label: "Mệt", icon: "https://cdn-icons-png.flaticon.com/512/742/742760.png" },
+    { key: "hungry", label: "Đói meo", icon: "https://cdn-icons-png.flaticon.com/512/1048/1048941.png" },
+    { key: "neutral", label: "Bình thường", icon: "https://cdn-icons-png.flaticon.com/512/742/742831.png" },
+  ];
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Trang chủ',
       headerLeft: () => (
-        <MenuImage
-          onPress={() => {
-            navigation.openDrawer();
-          }}
-        />
+        <MenuImage onPress={() => navigation.openDrawer()} />
       ),
       headerRight: () => <View />,
     });
   }, []);
 
-  // --- LẤY VÀ XỬ LÝ DỮ LIỆU ---
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -39,25 +46,21 @@ export default function HomeScreen(props) {
           getAllCategories()
         ]);
 
-        // 1. Logic tạo Banner (Giữ nguyên: Lấy ngẫu nhiên 5 món)
         const shuffledRecipes = [...recipes].sort(() => 0.5 - Math.random());
         setBannerData(shuffledRecipes.slice(0, 5));
 
-        // 2. LOGIC MỚI: Nhóm món ăn theo thể loại
         const grouped = categories.map(category => {
-          // Lọc ra các món ăn thuộc category này
           const recipesInCategory = recipes.filter(recipe => recipe.categoryId === category.id);
-          
-          return {
-            ...category,
-            recipes: recipesInCategory
-          };
+          return { ...category, recipes: recipesInCategory };
         });
 
-        // Chỉ lấy những thể loại nào có ít nhất 1 món ăn
         const validCategories = grouped.filter(item => item.recipes.length > 0);
-
         setGroupedData(validCategories);
+
+        if (recipes.length > 0) {
+          const r = recipes[Math.floor(Math.random() * recipes.length)];
+          setRandomSuggestion(r);
+        }
 
       } catch (error) {
         console.error("Error fetching home data:", error);
@@ -73,57 +76,38 @@ export default function HomeScreen(props) {
     navigation.navigate("Recipe", { item });
   };
 
-  // --- RENDER MỘT MÓN ĂN (Item con trong list ngang) ---
-  // --- RENDER MỘT MÓN ĂN (Chỉ hiện Ảnh + Tên) ---
   const renderRecipeItem = ({ item }) => (
-    <TouchableHighlight 
-      underlayColor="rgba(73,182,77,0.9)" 
-      onPress={() => onPressRecipe(item)}
-    >
-      <View style={{ 
-          marginRight: 15, 
-          width: 140, // Độ rộng cố định để các món bằng nhau
-      }}>
-        
-        {/* 1. Hiển thị Ảnh */}
-        <Image 
-            style={{ 
-                width: 140, 
-                height: 140,       // Mình để ảnh vuông cho đẹp (hoặc bạn chỉnh thành 110 nếu thích chữ nhật)
-                borderRadius: 15   // Bo góc ảnh
-            }} 
-            source={{ uri: item.photo_url }} 
+    <TouchableHighlight underlayColor="rgba(73,182,77,0.9)" onPress={() => onPressRecipe(item)}>
+      <View style={{ marginRight: 15, width: 140 }}>
+        <Image
+          style={{ width: 140, height: 140, borderRadius: 15 }}
+          source={{ uri: item.photo_url }}
         />
-        
-        {/* 2. Hiển thị Tên món */}
         <Text style={{
-            marginTop: 8,          // Cách ảnh ra một chút cho thoáng
-            fontSize: 14, 
-            fontWeight: 'bold', 
-            color: '#333',
-            textAlign: 'center'    // Căn giữa tên món ăn dưới ảnh
-        }} numberOfLines={2}> 
-            {item.title} 
-        </Text>     
+          marginTop: 8,
+          fontSize: 14,
+          fontWeight: 'bold',
+          color: '#333',
+          textAlign: 'center'
+        }} numberOfLines={2}>
+          {item.title}
+        </Text>
       </View>
     </TouchableHighlight>
   );
 
-  // --- RENDER MỘT THỂ LOẠI (Item cha trong list dọc) ---
   const renderCategoryItem = ({ item }) => (
     <View style={{ marginBottom: 20 }}>
-      {/* Tiêu đề thể loại */}
-      <Text style={{ 
-        fontSize: 20, 
-        fontWeight: 'bold', 
-        marginLeft: 15, 
+      <Text style={{
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginLeft: 15,
         marginBottom: 10,
-        color: '#333' 
+        color: '#333'
       }}>
         {item.name}
       </Text>
 
-      {/* List ngang chứa các món ăn của thể loại này */}
       <FlatList
         horizontal
         data={item.recipes}
@@ -135,18 +119,89 @@ export default function HomeScreen(props) {
     </View>
   );
 
-  // Memo header (Giữ nguyên logic của bạn)
   const memoizedHeader = useMemo(() => {
     return (
       <View style={styles.headerContainer}>
-         <HomeBanner 
-            bannerData={bannerData} 
-            onPressRecipe={onPressRecipe} 
-            isUserScrolling={isUserScrolling}
-         />
+        <HomeBanner
+          bannerData={bannerData}
+          onPressRecipe={onPressRecipe}
+          isUserScrolling={isUserScrolling}
+        />
+
+        {/* Mood Selector */}
+        <View style={{ marginTop: 20, paddingHorizontal: 15 }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Hôm nay bạn cảm thấy?</Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {moodOptions.map(m => (
+              <TouchableOpacity
+                key={m.key}
+                onPress={() => setMood(m.key)}
+                style={{
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 12,
+                  padding: 6,
+                  borderRadius: 12,
+                  backgroundColor: mood === m.key ? "#ffe0b2" : "#fff",
+                  borderWidth: 1,
+                  borderColor: mood === m.key ? "#ff9800" : "#d0d0d0",
+                }}
+              >
+                <Image
+                  source={{ uri: m.icon }}
+                  style={{ width: 34, height: 34, marginBottom: 4 }}
+                  resizeMode="contain"
+                />
+                <Text style={{ fontSize: 12, color: "#333" }}>{m.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Weather Box */}
+        <View style={{
+          marginTop: 20,
+          marginHorizontal: 15,
+          padding: 15,
+          borderRadius: 12,
+          backgroundColor: '#e3f2fd'
+        }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Thời tiết hôm nay</Text>
+          <Text style={{ marginTop: 8, fontSize: 15 }}>Nhiệt độ: {weather.temp}°C</Text>
+          <Text style={{ fontSize: 15 }}>Trạng thái: {weather.description}</Text>
+        </View>
+
+        {/* Random Suggestion */}
+        {randomSuggestion && (
+          <TouchableOpacity
+            style={{
+              marginTop: 20,
+              marginHorizontal: 15,
+              padding: 15,
+              borderRadius: 12,
+              backgroundColor: '#fff3e0',
+              borderWidth: 1,
+              borderColor: '#ffb74d'
+            }}
+            onPress={() => onPressRecipe(randomSuggestion)}
+          >
+            <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Gợi ý nấu gì hôm nay?</Text>
+
+            <View style={{ flexDirection: 'row', marginTop: 10, alignItems: 'center' }}>
+              <Image
+                source={{ uri: randomSuggestion.photo_url }}
+                style={{ width: 60, height: 60, borderRadius: 10, marginRight: 12 }}
+              />
+              <Text style={{ fontSize: 16, fontWeight: '600', flexShrink: 1 }}>
+                {randomSuggestion.title}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
     );
-  }, [bannerData, isUserScrolling]); 
+  }, [bannerData, mood, weather, randomSuggestion, isUserScrolling]);
 
   if (isLoading) {
     return (
@@ -157,24 +212,16 @@ export default function HomeScreen(props) {
   }
 
   return (
-    <View style={{flex: 1, backgroundColor: 'white'}}>
-      {/* FlatList Chính: Cuộn dọc, chứa các danh mục */}
+    <View style={{ flex: 1, backgroundColor: 'white' }}>
       <FlatList
         vertical
         showsVerticalScrollIndicator={false}
-        
-        // Dữ liệu bây giờ là danh sách các Category
         data={groupedData}
         renderItem={renderCategoryItem}
         keyExtractor={(item) => `${item.id}`}
-
-        // Quan trọng: Bỏ numColumns={2} vì chúng ta đang render list dọc
-        
-        // Logic bắt sự kiện cuộn (Giữ nguyên)
         onScrollBeginDrag={() => setIsUserScrolling(true)}
         onScrollEndDrag={() => setIsUserScrolling(false)}
         onMomentumScrollEnd={() => setIsUserScrolling(false)}
-
         ListHeaderComponent={memoizedHeader}
       />
     </View>

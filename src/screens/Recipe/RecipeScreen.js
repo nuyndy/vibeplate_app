@@ -209,7 +209,7 @@ export default function RecipeScreen(props) {
             {/* Thời gian */}
             <View style={styles.metaItem}>
               <Image source={require("../../../assets/icons/time.png")} style={styles.metaIcon} />
-              <Text style={styles.metaText}>{item.time}</Text>
+              <Text style={styles.metaText}>{item.time} phút</Text>
             </View>
 
             {/* Số người ăn */}

@@ -1,8 +1,13 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useState, useEffect } from 'react'; // Thêm useState, useEffect
 import { 
   View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, SafeAreaView 
 } from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
+
+// --- IMPORT FIREBASE ---
+import { auth, db } from '../../firebase/firebaseConfig'; // Thêm db
+import { signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore'; // Thêm hàm đọc dữ liệu
 
 // --- BẢNG MÀU ĐỒNG BỘ ---
 const COLORS = {
@@ -14,13 +19,21 @@ const COLORS = {
   textMain: '#1A1D26',    
   textSub: '#A0A5B9',     
   danger: '#584343',      
-  dangerBg: '#d3cbcb',    
+  dangerBg: '#d3cbcb',
+  admin: '#4A90E2',      // Màu xanh cho Admin
+  adminBg: '#E1F0FF',    // Nền nhạt cho Admin
 };
 
 export default function AccountScreen({ navigation }) {
 
   const interests = ["Healthy", "Món Nhật", "BBQ"];
   const allergies = ["Đậu phộng", "Sữa"];
+
+  // Lấy thông tin User Auth
+  const user = auth.currentUser;
+  
+  // State để lưu trạng thái Admin
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -34,10 +47,44 @@ export default function AccountScreen({ navigation }) {
     });
   }, []);
 
+  // --- LOGIC KIỂM TRA QUYỀN ADMIN ---
+  useEffect(() => {
+    const checkUserRole = async () => {
+      if (user?.email) {
+        try {
+          // Lưu ý: Dựa vào code Login trước đó, ID của user là email viết thường
+          const docId = user.email.toLowerCase();
+          const userRef = doc(db, "users", docId);
+          const docSnap = await getDoc(userRef);
+
+          if (docSnap.exists()) {
+            const userData = docSnap.data();
+            // Kiểm tra trường 'role' trong database
+            if (userData.role === 'admin') {
+              setIsAdmin(true);
+            }
+          }
+        } catch (error) {
+          console.log("Lỗi check role:", error);
+        }
+      }
+    };
+    checkUserRole();
+  }, [user]);
+
   const handleLogout = () => {
     Alert.alert("Đăng xuất", "Hẹn gặp lại bạn nhé?", [
       { text: "Hủy", style: "cancel" },
-      { text: "Đăng xuất", onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }) }
+      { 
+        text: "Đăng xuất", 
+        onPress: async () => {
+          try {
+            await signOut(auth);
+          } catch (error) {
+            Alert.alert("Lỗi", error.message);
+          }
+        } 
+      }
     ]);
   };
 
@@ -56,16 +103,19 @@ export default function AccountScreen({ navigation }) {
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png' }} 
+              source={{ uri: user?.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png' }} 
               style={styles.avatar} 
             />
-            <View style={styles.editBadge}>
-              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/1159/1159633.png'}} style={{width: 12, height: 12, tintColor: '#fff'}} />
-            </View>
+            {/* Nếu là Admin thì hiện badge Admin cho ngầu */}
+            {isAdmin && (
+               <View style={[styles.editBadge, {backgroundColor: COLORS.admin}]}>
+                 <Text style={{fontSize: 8, color: '#fff', fontWeight: 'bold'}}>ADMIN</Text>
+               </View>
+            )}
           </View>
           
-          <Text style={styles.name}>VibePlate Chef</Text>
-          <Text style={styles.email}>chef@vibeplate.com</Text>
+          <Text style={styles.name}>{user?.displayName || "VibePlate Chef"}</Text>
+          <Text style={styles.email}>{user?.email || "No Email"}</Text>
 
           <View style={styles.statsContainer}>
              <StatItem number="25" label="Món đã lưu" />
@@ -123,27 +173,47 @@ export default function AccountScreen({ navigation }) {
 
         {/* --- 4. TÀI KHOẢN & CÀI ĐẶT --- */}
         <View style={styles.card}>
+           
+           {/* --- 🌟 NÚT QUẢN LÝ DỮ LIỆU (CHỈ HIỆN VỚI ADMIN) --- */}
+           {isAdmin && (
+             <TouchableOpacity 
+                  style={styles.menuItem} 
+                  onPress={() => navigation.navigate('AdminDataManagement')} 
+                  // Lưu ý: Nhớ tạo màn hình 'AdminDataManagement' và khai báo trong Stack Navigator
+             >
+                <View style={[styles.menuIcon, {backgroundColor: COLORS.adminBg}]}>
+                   <Image 
+                     source={{uri: 'https://cdn-icons-png.flaticon.com/512/2345/2345338.png'}} 
+                     style={{width: 20, height: 20, tintColor: COLORS.admin}}
+                   />
+                </View>
+                <Text style={styles.menuText}>Quản lý dữ liệu</Text>
+                <Text style={styles.arrow}>›</Text>
+             </TouchableOpacity>
+           )}
+
            <TouchableOpacity 
                 style={styles.menuItem} 
                 onPress={() => navigation.navigate('InfoAccount')}
            >
               <View style={[styles.menuIcon, {backgroundColor: COLORS.primaryLight}]}>
                  <Image 
-                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} 
-                    style={{width: 20, height: 20, tintColor: COLORS.primary}}
+                   source={{uri: 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} 
+                   style={{width: 20, height: 20, tintColor: COLORS.primary}}
                  />
               </View>
               <Text style={styles.menuText}>Thông tin tài khoản</Text>
               <Text style={styles.arrow}>›</Text>
            </TouchableOpacity>
+           
            <TouchableOpacity 
                 style={[styles.menuItem, {borderBottomWidth: 0}]} 
                 onPress={handleLogout}
            >
               <View style={[styles.menuIcon, {backgroundColor: COLORS.dangerBg}]}>
                  <Image 
-                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png'}} 
-                    style={{width: 20, height: 20, tintColor: COLORS.danger}}
+                   source={{uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png'}} 
+                   style={{width: 20, height: 20, tintColor: COLORS.danger}}
                  />
               </View>
               <Text style={[styles.menuText, {color: COLORS.danger}]}>Đăng xuất</Text>
@@ -157,6 +227,7 @@ export default function AccountScreen({ navigation }) {
   );
 }
 
+// Giữ nguyên Styles phía dưới...
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 40 },
   profileSection: { alignItems: 'center', marginBottom: 25 },
@@ -169,6 +240,7 @@ const styles = StyleSheet.create({
   editBadge: {
     position: 'absolute', bottom: 0, right: 5, backgroundColor: COLORS.primary,
     padding: 8, borderRadius: 20, borderWidth: 3, borderColor: '#fff',
+    justifyContent: 'center', alignItems: 'center'
   },
   name: { fontSize: 24, fontWeight: '800', color: COLORS.textMain, marginBottom: 2 },
   email: { fontSize: 14, color: COLORS.textSub, marginBottom: 20 },
