@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "713850148752",
+    "project_id": "vibeplate-1680f",
+    "storage_bucket": "vibeplate-1680f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713850148752:android:9f28c36cfa6487b4b10515",
+        "android_client_info": {
+          "package_name": "com.vibeplate.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "713850148752-nkje1ac0nddquc990an700j2uost08ee.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vibeplate.app",
+            "certificate_hash": "f62b40bef72d0c3866a667274a9771cf39f459d8"
+          }
+        },
+        {
+          "client_id": "713850148752-4ebjj3mt0kctk2ishpu166mno66e2b18.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJAu0wLAc9pm0FGJcmCC7Vm5vM87JGwJo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "713850148752-4ebjj3mt0kctk2ishpu166mno66e2b18.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "713850148752-fc4rcc7fjp2kfigso835s07pnsb1tmuv.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.vibeplate.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
