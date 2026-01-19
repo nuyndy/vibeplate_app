@@ -2,8 +2,14 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
+import { useState, useEffect } from 'react'; // Thêm useState, useEffect
+import { View, ActivityIndicator } from 'react-native'; // Thêm ActivityIndicator để hiện loading
+import { onAuthStateChanged } from 'firebase/auth'; // Lắng nghe đăng nhập
+import { auth } from '../firebase/firebaseConfig'; // Đường dẫn file firebase của bạn
 
-// --- IMPORT CÁC MÀN HÌNH ---
+// Import các màn hình 
+import LoginScreen from '../screens/Auth/Login/LoginScreen';     
+import RegisterScreen from '../screens/Auth/Register/RegisterScreen'; 
 import HomeScreen from '../screens/Home/HomeScreen';
 import CategoriesScreen from '../screens/Categories/CategoriesScreen';
 import RecipeScreen from '../screens/Recipe/RecipeScreen';
@@ -29,7 +35,26 @@ import RecipeSuggestionScreen from '../screens/RecipeSuggestion/RecipeSuggestion
 
 const Stack = createStackNavigator();
 
+function AuthNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name='Login' component={LoginScreen} />
+      <Stack.Screen name='Register' component={RegisterScreen} />
+    </Stack.Navigator>
+  );
+}
+
 // --- MAIN NAVIGATOR (Bên trong sau khi đăng nhập) ---
+function AuthNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name='Login' component={LoginScreen} />
+      <Stack.Screen name='Register' component={RegisterScreen} />
+    </Stack.Navigator>
+  );
+}
+
+>>>>>>> fix-android-login
 function MainNavigator() {
   return (
     <Stack.Navigator
@@ -79,19 +104,29 @@ function DrawerStack() {
 
 // --- APP CONTAINER (Luồng đi tổng) ---
 export default function AppContainer() {
+  const [user, setUser] = useState(null);
+  const [initializing, setInitializing] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (initializing) setInitializing(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  if (initializing) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+        <ActivityIndicator size="large" color="#2cd18a"/>
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
-      <Stack.Navigator 
-        screenOptions={{ headerShown: false }} 
-        initialRouteName="Login"
-      >
-        {/* Nhóm Authentication (Chưa đăng nhập) */}
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Signup" component={SignupScreen} />
-        
-        {/* Nhóm App chính (Đã đăng nhập) */}
-        <Stack.Screen name="DrawerStack" component={DrawerStack} />
-      </Stack.Navigator>
+      {/* Có User -> Vào Main (Home), Không có -> Vào Login */}
+      {user ? <DrawerStack/> : <AuthNavigator/>}
     </NavigationContainer>
   );
 }

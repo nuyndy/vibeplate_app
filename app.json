@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Instafood",
-    "slug": "instafood-recipes-app",
-    "description": "React Native Recipes App Demo. Download source code for free at https://www.instamobile.io . You can also check out the Swift version at https://www.iosapptemplates.com and the Kotlin version at https://www.instakotlin.com .",
+    "name": "VibePlate",
+    "slug": "vibeplate",
+    "description": "Ứng dụng chia sẻ công thức nấu ăn VibePlate",
     "privacy": "public",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,9 +20,13 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vibeplate.app", 
+      "googleServicesFile": "./GoogleService-Info.plist" 
     },
     "android": {
+      "package": "com.vibeplate.app", 
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
@@ -34,7 +38,7 @@
     "newArchEnabled": true,
     "plugins": [
       "expo-asset",
-      "expo-font"
+      "@react-native-google-signin/google-signin"
     ]
   }
 }
