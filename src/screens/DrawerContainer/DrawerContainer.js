@@ -1,3 +1,5 @@
+// src/screens/DrawerContainer/DrawerContainer.js
+
 import React from "react";
 import { View } from "react-native";
 import PropTypes from "prop-types";
@@ -35,7 +37,6 @@ export default function DrawerContainer(props) {
         />
         <MenuButton
           title="TỦ BẾP"
-          // Tạm thời dùng lại icon category
           source={require("../../../assets/icons/pantry.png")} 
           onPress={() => {
             navigation.navigate("Main", { screen: "Pantry" });
@@ -59,13 +60,23 @@ export default function DrawerContainer(props) {
           }}
         />
         
-        {/* --- NÚT TÀI KHOẢN MỚI --- */}
+        {/* --- NÚT THÔNG BÁO (Thêm vào đây, TRƯỚC trang Tài khoản) --- */}
+        <MenuButton
+          title="THÔNG BÁO"
+          // Lưu ý: Bạn nên tìm icon cái chuông và đổi tên thành notification.png nhé
+          // Tạm thời mình dùng icon search để không bị lỗi ảnh
+          source={require("../../../assets/icons/notification.png")} 
+          onPress={() => {
+            // Lệnh này bảo app chuyển sang màn hình tên là "Notification"
+            navigation.navigate("Main", { screen: "Notification" });
+            navigation.closeDrawer();
+          }}
+        />
+
         <MenuButton
           title="TÀI KHOẢN"
-          // Mình dùng tạm icon home để không bị lỗi, bạn có thể thay bằng icon user.png nếu có
           source={require("../../../assets/icons/user.png")} 
           onPress={() => {
-            // Chuyển hướng đến màn hình Account đã khai báo trong MainNavigator
             navigation.navigate("Main", { screen: "Account" });
             navigation.closeDrawer();
           }}
@@ -78,6 +89,5 @@ export default function DrawerContainer(props) {
 DrawerContainer.propTypes = {
   navigation: PropTypes.shape({
     navigate: PropTypes.func.isRequired,
-    closeDrawer: PropTypes.func.isRequired,
   }),
 };

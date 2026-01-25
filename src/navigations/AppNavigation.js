@@ -2,10 +2,11 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { useState, useEffect } from 'react'; // Thêm useState, useEffect
-import { View, ActivityIndicator } from 'react-native'; // Thêm ActivityIndicator để hiện loading
-import { onAuthStateChanged } from 'firebase/auth'; // Lắng nghe đăng nhập
-import { auth } from '../firebase/firebaseConfig'; // Đường dẫn file firebase của bạn
+import { useState, useEffect } from 'react'; 
+import { View, ActivityIndicator } from 'react-native'; 
+import { onAuthStateChanged } from 'firebase/auth'; 
+import { auth } from '../firebase/firebaseConfig'; 
+import NotificationScreen from '../screens/Notification/NotificationScreen';
 
 // Import các màn hình 
 import LoginScreen from '../screens/Auth/Login/LoginScreen';     
@@ -30,7 +31,6 @@ import ContributedDishesScreen from '../screens/Account/ContributedDishesScreen'
 import ShoppingListScreen from '../screens/ShoppingList/ShoppingListScreen';
 
 // --- IMPORT MÀN HÌNH GỢI Ý MỚI ---
-// Đảm bảo đường dẫn file đúng với nơi bạn vừa tạo file RecipeSuggestionScreen.js
 import RecipeSuggestionScreen from '../screens/RecipeSuggestion/RecipeSuggestionScreen'; 
 
 //quản lý
@@ -64,6 +64,7 @@ function MainNavigator() {
       <Stack.Screen name='Search' component={SearchScreen} />
       <Stack.Screen name='IngredientsDetails' component={IngredientsDetailsScreen} />
       <Stack.Screen name='Pantry' component={PantryScreen} />
+      
       {/* --- Màn hình Chat AI --- */}
       <Stack.Screen name='Chat' component={ChatScreen} />
       
@@ -73,6 +74,9 @@ function MainNavigator() {
       <Stack.Screen name="ContributedDishes" component={ContributedDishesScreen} />
       <Stack.Screen name='InfoAccount' component={InfoAccountScreen} />
       <Stack.Screen name='ShoppingList' component={ShoppingListScreen} />
+
+      {/* 🔥 ĐÃ THÊM: Màn hình Thông Báo 🔥 */}
+      <Stack.Screen name='Notification' component={NotificationScreen} />
       
       {/* --- MÀN HÌNH GỢI Ý CÔNG THỨC (MỚI) --- */}
       <Stack.Screen name='DishNomination' component={DishNominationScreen} />
