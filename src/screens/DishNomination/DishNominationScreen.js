@@ -1,36 +1,73 @@
-import React, { useState, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { 
-  View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, 
-  Image, Alert, KeyboardAvoidingView, Platform, SafeAreaView 
+  View, Text, TextInput, ScrollView, TouchableOpacity, 
+  Image, Alert, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Modal, FlatList
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { db, auth } from '../../firebase/firebaseConfig'; 
+import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { styles, COLORS } from './style';
 
-// --- BẢNG MÀU HIỆN ĐẠI ---
-const COLORS = {
-  primary: '#1b1d1c',     // Xanh chủ đạo
-  secondary: '#928f87',   // Vàng điểm nhấn
-  bg: '#F8F9FD',          // Nền tổng thể (Xám xanh rất nhạt)
-  card: '#FFFFFF',        // Nền thẻ trắng
-  textMain: '#1A1D26',    // Đen than (dễ đọc hơn đen tuyền)
-  textSub: '#A0A5B9',     // Xám nhạt
-  inputBg: '#F5F6FA',     // Nền ô nhập liệu
-  danger: '#FF6B6B',      // Màu đỏ báo lỗi/xóa
-};
+const CLOUD_NAME = 'devpumtqu';
+const UPLOAD_PRESET = 'VibePlate';
 
 export default function DishNominationScreen({ navigation }) {
   
   // --- STATE ---
   const [dishName, setDishName] = useState('');
-  const [description, setDescription] = useState('');
+  
+  // THEO YÊU CẦU: Dùng description làm nơi chứa toàn bộ cách làm
+  const [description, setDescription] = useState(''); 
   const [dishImage, setDishImage] = useState(null);
+  
+  // Mảng chứa thêm ảnh các bước (nếu người dùng muốn up thêm ảnh minh họa)
+  const [extraPhotos, setExtraPhotos] = useState([]); 
 
-  const [tempIngredient, setTempIngredient] = useState('');
-  const [ingredients, setIngredients] = useState([]);
+  // --- STATE NGUYÊN LIỆU ---
+  const [ingredients, setIngredients] = useState([]); 
+  const [allIngredients, setAllIngredients] = useState([]); 
+  const [filteredIngredients, setFilteredIngredients] = useState([]); 
+  const [ingredientSearch, setIngredientSearch] = useState(''); 
+  const [selectedIngredient, setSelectedIngredient] = useState(null); 
+  const [tempQty, setTempQty] = useState(''); 
+  const [showIngredientModal, setShowIngredientModal] = useState(false); 
 
-  const [tempStep, setTempStep] = useState('');
-  const [tempStepImage, setTempStepImage] = useState(null);
-  const [steps, setSteps] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // --- HEADER CONFIG ---
+  // State các trường Admin
+  const [time, setTime] = useState('');
+  const [servings, setServings] = useState('');
+  const [categoryId, setCategoryId] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+
+  // --- LOAD DATA ---
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const catSnap = await getDocs(collection(db, 'categories'));
+        setCategories(catSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        const ingSnap = await getDocs(collection(db, 'ingredients'));
+        const ingList = ingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllIngredients(ingList);
+        setFilteredIngredients(ingList); 
+      } catch (e) { console.log("Lỗi load data:", e); }
+    };
+    fetchData();
+  }, []);
+
+  // Search nguyên liệu
+  useEffect(() => {
+    if (ingredientSearch.trim() === '') {
+      setFilteredIngredients(allIngredients);
+    } else {
+      const lower = ingredientSearch.toLowerCase();
+      const filtered = allIngredients.filter(item => item.name.toLowerCase().includes(lower));
+      setFilteredIngredients(filtered);
+    }
+  }, [ingredientSearch, allIngredients]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Đóng Góp Món Ngon',
@@ -40,393 +77,283 @@ export default function DishNominationScreen({ navigation }) {
     });
   }, [navigation]);
 
-  // --- LOGIC ---
-  const pickImage = (setFunc) => {
-    // Giả lập chọn ảnh
-    setFunc('https://images.unsplash.com/photo-1546069901-ba9599a7e63c'); 
+  // --- UPLOAD ẢNH ---
+  const uploadToCloudinary = async (imageUri) => {
+    if (!imageUri) return null;
+    const data = new FormData();
+    data.append('file', { uri: imageUri, type: 'image/jpeg', name: 'upload.jpg' });
+    data.append('upload_preset', UPLOAD_PRESET);
+    try {
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: 'POST', body: data });
+      const result = await res.json();
+      return result.secure_url;
+    } catch (error) { return null; }
   };
 
+  const pickImage = async (type) => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 3], quality: 0.7,
+    });
+    
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      
+      // Upload luôn để lấy URL
+      setLoading(true); // Tạm hiện loading nhẹ
+      const url = await uploadToCloudinary(uri);
+      setLoading(false);
+
+      if (url) {
+         if (type === 'cover') {
+             setDishImage(url);
+         } else {
+             // Thêm vào danh sách ảnh phụ
+             setExtraPhotos([...extraPhotos, url]);
+         }
+      } else {
+          Alert.alert("Lỗi", "Không upload được ảnh");
+      }
+    }
+  };
+
+  // --- LOGIC NGUYÊN LIỆU ---
   const addIngredient = () => {
-    if (tempIngredient.trim()) {
-      setIngredients([...ingredients, tempIngredient]);
-      setTempIngredient('');
-    }
+    if (!selectedIngredient) return Alert.alert("Chưa chọn", "Vui lòng chọn tên nguyên liệu");
+    if (!tempQty.trim()) return Alert.alert("Thiếu số lượng", "Vui lòng nhập định lượng");
+
+    setIngredients([...ingredients, { 
+      ingredientId: selectedIngredient.id, 
+      name: selectedIngredient.name,      
+      quantity: tempQty 
+    }]);
+    
+    setSelectedIngredient(null);
+    setTempQty('');
   };
 
-  const addStep = () => {
-    if (tempStep.trim()) {
-      setSteps([...steps, { text: tempStep, image: tempStepImage }]);
-      setTempStep('');
-      setTempStepImage(null);
-    }
+  const removeIngredient = (index) => {
+    setIngredients(ingredients.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
-    if (!dishName || ingredients.length === 0 || steps.length === 0) {
-      Alert.alert("Thiếu thông tin", "Vui lòng nhập tên, nguyên liệu và các bước.");
+  // --- SUBMIT ---
+  const handleSubmit = async () => {
+    // Validate cơ bản (Bỏ validate steps vì đã ẩn)
+    if (!dishName || !categoryId || !time || !servings || ingredients.length === 0 || !description) {
+      Alert.alert("Thiếu thông tin", "Vui lòng điền đầy đủ các mục.");
       return;
     }
-    Alert.alert("Tuyệt vời! 👨‍🍳", "Món ăn của bạn đã được gửi đi phê duyệt.", [
-      { text: "Về trang chủ", onPress: () => navigation.goBack() }
-    ]);
+
+    setLoading(true);
+    try {
+      const user = auth.currentUser;
+      const querySnapshot = await getDocs(collection(db, 'suggested_recipes'));
+      let maxId = 0;
+      querySnapshot.forEach((doc) => {
+        const idNum = parseInt(doc.id);
+        if (!isNaN(idNum) && idNum > maxId) maxId = idNum;
+      });
+      const newDocId = String(maxId + 1);
+
+      // TẠO MẢNG ẢNH TỔNG HỢP: [Ảnh bìa, ...Ảnh phụ]
+      let finalPhotos = [];
+      if (dishImage) finalPhotos.push(dishImage);
+      finalPhotos = finalPhotos.concat(extraPhotos);
+
+      const newRecipeData = {
+        id: newDocId,
+        authorId: user ? user.uid : 'anonymous', 
+        authorName: user ? (user.displayName || user.email) : 'Ẩn danh',
+        
+        recipeId: Number(newDocId),
+        title: dishName,
+        categoryId: Number(categoryId),
+        time: Number(time),
+        servings: Number(servings),
+        
+        // --- QUAN TRỌNG: THEO YÊU CẦU CỦA BẠN ---
+        description: description, // Toàn bộ nội dung cách làm nằm ở đây
+        steps: [],                // Mảng steps để rỗng
+        
+        ingredients: ingredients, 
+        
+        photo_url: dishImage || '',     // Ảnh đại diện
+        photosArray: finalPhotos,       // Mảng chứa tất cả ảnh
+        
+        status: 'pending',
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, 'suggested_recipes', newDocId), newRecipeData);
+
+      Alert.alert("Thành công! 👨‍🍳", "Đã gửi công thức chờ duyệt.", [
+        { text: "OK", onPress: () => navigation.goBack() }
+      ]);
+    } catch (error) {
+      Alert.alert("Lỗi", error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           
-          {/* 1. HEADER ẢNH & TÊN MÓN */}
+          {/* 1. THÔNG TIN CƠ BẢN */}
           <View style={styles.card}>
-            <Text style={styles.sectionHeader}>Thông tin cơ bản</Text>
+            <Text style={styles.sectionHeader}>Thông tin món ăn</Text>
             
-            {/* Vùng chọn ảnh Cover */}
-            <TouchableOpacity style={styles.coverPicker} onPress={() => pickImage(setDishImage)}>
+            <TouchableOpacity style={styles.coverPicker} onPress={() => pickImage('cover')}>
               {dishImage ? (
                 <Image source={{ uri: dishImage }} style={styles.coverImage} />
               ) : (
                 <View style={styles.coverPlaceholder}>
-                  <Image 
-                    source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3342/3342137.png' }} 
-                    style={{ width: 50, height: 50, marginBottom: 10, tintColor: COLORS.primary }} 
-                  />
-                  <Text style={{color: COLORS.primary, fontWeight: '600'}}>+ Tải ảnh món ăn</Text>
-                  <Text style={{color: COLORS.textSub, fontSize: 12}}>Ảnh đẹp giúp món ăn hấp dẫn hơn</Text>
+                  <Text style={{color: COLORS.primary, fontWeight: '600'}}>+ Tải ảnh bìa món ăn</Text>
                 </View>
               )}
             </TouchableOpacity>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Tên món ăn</Text>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Ví dụ: Cơm tấm sườn bì..."
-                placeholderTextColor={COLORS.textSub}
-                value={dishName}
-                onChangeText={setDishName}
-              />
+              <Text style={styles.label}>Tên món</Text>
+              <TextInput style={styles.input} placeholder="Ví dụ: Phở bò..." value={dishName} onChangeText={setDishName} />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Mô tả ngắn</Text>
-              <TextInput 
-                style={[styles.input, {height: 80, paddingTop: 15}]} 
-                placeholder="Giới thiệu sơ qua về hương vị..."
-                placeholderTextColor={COLORS.textSub}
-                multiline
-                value={description}
-                onChangeText={setDescription}
-              />
+               <Text style={styles.label}>Danh mục</Text>
+               <TouchableOpacity style={styles.selectBox} onPress={() => setShowCategoryModal(true)}>
+                  <Text style={categoryId ? styles.selectText : styles.selectPlaceholder}>
+                    {categories.find(c => c.id == categoryId)?.name || "-- Chọn danh mục --"}
+                  </Text>
+                  <Text>▼</Text>
+               </TouchableOpacity>
+            </View>
+
+            <View style={styles.rowInputs}>
+              <View style={styles.halfInput}>
+                <Text style={styles.label}>Thời gian (phút)</Text>
+                <TextInput style={styles.input} placeholder="30" keyboardType="numeric" value={time} onChangeText={setTime} />
+              </View>
+              <View style={styles.halfInput}>
+                <Text style={styles.label}>Khẩu phần (người)</Text>
+                <TextInput style={styles.input} placeholder="2" keyboardType="numeric" value={servings} onChangeText={setServings} />
+              </View>
             </View>
           </View>
 
-          {/* 2. NGUYÊN LIỆU (Style dạng Tags/Chips) */}
+          {/* 2. NGUYÊN LIỆU (Giữ nguyên logic) */}
           <View style={styles.card}>
             <Text style={styles.sectionHeader}>🛒 Nguyên liệu</Text>
-            <Text style={styles.subHint}>Liệt kê các thành phần cần thiết</Text>
-
-            {/* Input thêm nguyên liệu */}
+            
             <View style={styles.addInputRow}>
+              <TouchableOpacity 
+                style={[styles.selectBox, { flex: 2, marginTop: 0, height: 50, paddingVertical: 0 }]} 
+                onPress={() => { setIngredientSearch(''); setShowIngredientModal(true); }}
+              >
+                  <Text style={selectedIngredient ? styles.selectText : styles.selectPlaceholder}>
+                    {selectedIngredient ? selectedIngredient.name : "Chọn tên..."}
+                  </Text>
+              </TouchableOpacity>
+
               <TextInput 
-                style={[styles.input, {flex: 1}]} 
-                placeholder="Nhập tên & định lượng..."
-                placeholderTextColor={COLORS.textSub}
-                value={tempIngredient}
-                onChangeText={setTempIngredient}
+                style={[styles.input, {flex: 1, height: 50}]} 
+                placeholder="SL (200g)" 
+                value={tempQty} 
+                onChangeText={setTempQty} 
               />
               <TouchableOpacity style={styles.btnAddSmall} onPress={addIngredient}>
-                <Text style={styles.btnAddText}>Thêm</Text>
+                <Text style={styles.btnAddText}>+</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Danh sách Chips */}
             <View style={styles.chipContainer}>
               {ingredients.map((item, index) => (
-                <TouchableOpacity 
-                  key={index} 
-                  style={styles.chip}
-                  onPress={() => {
-                    const newIds = ingredients.filter((_, i) => i !== index);
-                    setIngredients(newIds);
-                  }}
-                >
-                  <Text style={styles.chipText}>{item}</Text>
-                  <View style={styles.chipClose}>
-                    <Text style={{color: 'white', fontSize: 10, fontWeight:'bold'}}>✕</Text>
-                  </View>
+                <TouchableOpacity key={index} style={styles.chip} onPress={() => removeIngredient(index)}>
+                  <Text style={styles.chipText}>{item.name} ({item.quantity})</Text>
+                  <Text style={{color: 'white', marginLeft: 5}}>✕</Text>
                 </TouchableOpacity>
               ))}
-              {ingredients.length === 0 && <Text style={styles.emptyText}>Chưa có nguyên liệu nào</Text>}
             </View>
           </View>
 
-          {/* 3. CÁC BƯỚC (Style Timeline) */}
+          {/* 3. CÁCH LÀM (SỬA LẠI: 1 Ô LỚN) */}
           <View style={styles.card}>
-            <Text style={styles.sectionHeader}>🍳 Các bước thực hiện</Text>
+            <Text style={styles.sectionHeader}>🍳 Cách làm (Chi tiết)</Text>
             
-            {steps.map((step, index) => (
-              <View key={index} style={styles.stepCard}>
-                <View style={styles.stepBadge}>
-                  <Text style={styles.stepNumber}>{index + 1}</Text>
-                </View>
-                <View style={{flex: 1}}>
-                  <Text style={styles.stepText}>{step.text}</Text>
-                  {step.image && (
-                    <Image source={{ uri: step.image }} style={styles.stepImage} />
-                  )}
-                </View>
-                <TouchableOpacity onPress={() => {
-                   const newSteps = steps.filter((_, i) => i !== index);
-                   setSteps(newSteps);
-                }}>
-                  <Image 
-                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1214/1214428.png'}} 
-                    style={{width: 20, height: 20, tintColor: COLORS.danger, opacity: 0.5}} 
-                  />
-                </TouchableOpacity>
-              </View>
-            ))}
+            <TextInput 
+               style={[styles.input, {height: 150, padding: 10, textAlignVertical: 'top'}]} 
+               placeholder="Bước 1: Sơ chế...&#10;Bước 2: Nấu...&#10;Bước 3: Hoàn thiện..." 
+               multiline 
+               value={description} 
+               onChangeText={setDescription} 
+            />
 
-            {/* Form thêm bước */}
-            <View style={styles.addStepBox}>
-              <TextInput 
-                style={[styles.input, {height: 80, backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee'}]} 
-                placeholder="Hướng dẫn chi tiết bước này..."
-                placeholderTextColor={COLORS.textSub}
-                multiline
-                value={tempStep}
-                onChangeText={setTempStep}
-              />
-              <View style={styles.stepActions}>
-                <TouchableOpacity style={styles.btnPhoto} onPress={() => pickImage(setTempStepImage)}>
-                   <Text style={{fontSize: 13, color: tempStepImage ? COLORS.primary : COLORS.textSub, fontWeight: '600'}}>
-                     {tempStepImage ? "📸 Đã có ảnh" : "📷 Thêm ảnh bước"}
-                   </Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.btnAddStep} onPress={addStep}>
-                  <Text style={{color: '#fff', fontWeight: 'bold'}}>+ Lưu bước {steps.length + 1}</Text>
-                </TouchableOpacity>
-              </View>
+            {/* Khu vực thêm ảnh phụ (Nằm trong mảng ảnh) */}
+            <View style={{marginTop: 15}}>
+                <Text style={styles.label}>Ảnh minh họa thêm (Tùy chọn):</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{flexDirection: 'row', marginTop: 10}}>
+                    {/* Nút thêm ảnh */}
+                    <TouchableOpacity style={styles.addPhotoBtn} onPress={() => pickImage('extra')}>
+                        <Text style={{fontSize: 24, color: '#ccc'}}>+</Text>
+                    </TouchableOpacity>
+
+                    {/* List ảnh đã chọn */}
+                    {extraPhotos.map((url, idx) => (
+                        <View key={idx} style={{marginRight: 10, position: 'relative'}}>
+                            <Image source={{uri: url}} style={{width: 80, height: 80, borderRadius: 8}} />
+                            <TouchableOpacity 
+                                style={{position:'absolute', top:0, right:0, backgroundColor:'rgba(0,0,0,0.5)', padding:2, borderRadius:4}}
+                                onPress={() => setExtraPhotos(extraPhotos.filter((_, i) => i !== idx))}
+                            >
+                                <Text style={{color: '#fff', fontSize: 10}}>✕</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+                </ScrollView>
             </View>
+
           </View>
 
-          {/* NÚT SUBMIT LỚN */}
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-             <Text style={styles.submitText}>GỬI CÔNG THỨC ✨</Text>
+          <TouchableOpacity style={[styles.submitButton, loading && { opacity: 0.7 }]} onPress={handleSubmit} disabled={loading}>
+             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>GỬI CÔNG THỨC ✨</Text>}
           </TouchableOpacity>
-
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* --- MODAL DANH MỤC & NGUYÊN LIỆU (Giữ nguyên) --- */}
+      <Modal visible={showCategoryModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowCategoryModal(false)}>
+           <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Chọn Danh Mục</Text>
+              <FlatList data={categories} keyExtractor={item => String(item.id)} renderItem={({item}) => (
+                  <TouchableOpacity style={styles.categoryItem} onPress={() => { setCategoryId(item.id); setShowCategoryModal(false); }}>
+                    <Text style={styles.categoryText}>{item.name}</Text>
+                  </TouchableOpacity>
+                )} />
+           </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={showIngredientModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+           <View style={[styles.modalContent, { height: '70%' }]}> 
+              <Text style={styles.modalTitle}>Chọn Nguyên Liệu</Text>
+              <View style={styles.searchBoxModal}>
+                 <Text style={{marginRight: 10}}>🔍</Text>
+                 <TextInput style={{flex: 1}} placeholder="Tìm kiếm..." value={ingredientSearch} onChangeText={setIngredientSearch} autoFocus/>
+              </View>
+              <FlatList data={filteredIngredients} keyExtractor={item => String(item.id)} renderItem={({item}) => (
+                  <TouchableOpacity style={styles.categoryItem} onPress={() => { setSelectedIngredient(item); setShowIngredientModal(false); }}>
+                    <Text style={styles.categoryText}>{item.name}</Text>
+                  </TouchableOpacity>
+                )} 
+                ListEmptyComponent={<Text style={{textAlign: 'center', marginTop: 20}}>Không tìm thấy</Text>}
+              />
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setShowIngredientModal(false)}><Text style={styles.closeText}>Đóng</Text></TouchableOpacity>
+           </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    paddingBottom: 50,
-  },
-  
-  // --- CARD CHUNG ---
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
-    // Bóng đổ mềm
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  sectionHeader: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.textMain,
-    marginBottom: 15,
-  },
-  subHint: {
-    fontSize: 13,
-    color: COLORS.textSub,
-    marginTop: -10,
-    marginBottom: 15,
-  },
-
-  // --- INPUT STYLES ---
-  inputGroup: {
-    marginTop: 15,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textMain,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  input: {
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: COLORS.textMain,
-    fontWeight: '500',
-  },
-
-  // --- IMAGE PICKER ---
-  coverPicker: {
-    height: 180,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#E8F7F0', // Xanh rất nhạt
-    borderWidth: 2,
-    borderColor: '#C2EBD9',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  coverImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  coverPlaceholder: {
-    alignItems: 'center',
-  },
-
-  // --- INGREDIENT CHIPS ---
-  addInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    gap: 10,
-  },
-  btnAddSmall: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  btnAddText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    backgroundColor: '#F0F9F4',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    paddingRight: 6,
-    borderRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1EBE1',
-  },
-  chipText: {
-    color: '#2F4F4F',
-    fontWeight: '600',
-    fontSize: 13,
-    marginRight: 6,
-  },
-  chipClose: {
-    backgroundColor: '#BCCGC6', 
-    width: 18, 
-    height: 18, 
-    borderRadius: 9, 
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center', 
-    alignItems: 'center'
-  },
-  emptyText: {
-    color: COLORS.textSub,
-    fontStyle: 'italic',
-    fontSize: 13,
-  },
-
-  // --- STEPS TIMELINE ---
-  stepCard: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    gap: 12,
-  },
-  stepBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  stepNumber: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  stepText: {
-    fontSize: 15,
-    color: COLORS.textMain,
-    lineHeight: 22,
-    marginTop: 2,
-  },
-  stepImage: {
-    width: '100%',
-    height: 120,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  
-  // Add Step Form
-  addStepBox: {
-    backgroundColor: COLORS.inputBg,
-    padding: 15,
-    borderRadius: 16,
-    marginTop: 10,
-  },
-  stepActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  btnPhoto: {
-    padding: 8,
-  },
-  btnAddStep: {
-    backgroundColor: COLORS.textMain, // Nút đen cho nổi
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-  },
-
-  // --- SUBMIT BUTTON ---
-  submitButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 18,
-    paddingVertical: 18,
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 30,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  submitText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-});

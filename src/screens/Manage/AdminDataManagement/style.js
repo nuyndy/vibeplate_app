@@ -49,7 +49,7 @@ export const styles = StyleSheet.create({
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6 },
   btnText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-  fab: { position: 'absolute', bottom: 30, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.secondary, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5, elevation: 5 },
+  fab: { position: 'absolute', bottom: 30, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5, elevation: 5 },
   fabText: { fontSize: 30, color: '#fff', fontWeight: 'bold', marginTop: -2 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, height: '85%' },
@@ -58,6 +58,28 @@ export const styles = StyleSheet.create({
   inputGroup: { marginBottom: 15 },
   label: { fontSize: 12, color: COLORS.textSub, marginBottom: 5, fontWeight: '600' },
   input: { backgroundColor: COLORS.inputBg, borderRadius: 8, padding: 12, fontSize: 14, color: COLORS.textMain },
+  pickImageBtn: { backgroundColor: COLORS.secondary, padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 10 },
+  pickImageText: { color: '#fff', fontWeight: 'bold' },
+  coverPicker: {
+    height: 180,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#E8F7F0', // Xanh rất nhạt
+    borderWidth: 2,
+    borderColor: '#C2EBD9',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  coverPlaceholder: {
+    alignItems: 'center',
+  },
   saveBtn: { backgroundColor: COLORS.primary, padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
   saveBtnText: { color: '#fff', fontWeight: 'bold' },
 });
