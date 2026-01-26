@@ -34,7 +34,7 @@ import ShoppingListScreen from '../screens/ShoppingList/ShoppingListScreen';
 import RecipeSuggestionScreen from '../screens/RecipeSuggestion/RecipeSuggestionScreen'; 
 
 //quản lý
-import AdminDataManagement from '../screens/Manage/AdminDataManagement';
+import AdminDataManagement from '../screens/Manage/AdminDataManagement/AdminDataManagementScreen';
 
 const Stack = createStackNavigator();
 
@@ -120,11 +120,13 @@ export default function AppContainer() {
       </View>
     );
   }
-
+  
+  
+  const isAllowedToEnter = user && (user.emailVerified || user.email === 'admin@vibeplate.com');
   return (
     <NavigationContainer>
-      {/* Có User -> Vào Main (Home), Không có -> Vào Login */}
-      {user ? <DrawerStack/> : <AuthNavigator/>}
+      {/* Chỉ cho vào DrawerStack (Home) nếu đã Verify hoặc là Admin */}
+      { isAllowedToEnter ? <DrawerStack/> : <AuthNavigator/> }
     </NavigationContainer>
   );
 }

@@ -11,7 +11,10 @@ import {
   signInWithEmailAndPassword, 
   GoogleAuthProvider, 
   signInWithCredential, 
-  signInWithPopup 
+  signInWithPopup,
+  signOut,               // Import thêm
+  sendEmailVerification, // Import thêm
+  deleteUser             // Import thêm
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -32,7 +35,6 @@ export default function LoginScreen({ navigation }) {
   // --- HÀM TẠO DỮ LIỆU USER (CẤU TRÚC CHUẨN) ---
   const checkAndCreateUserData = async (user) => {
     try {
-      // Vẫn dùng email làm Document ID để dễ tìm kiếm
       const userDocId = user.email.toLowerCase(); 
       const userRef = doc(db, "users", userDocId);
       const docSnap = await getDoc(userRef);
@@ -40,19 +42,15 @@ export default function LoginScreen({ navigation }) {
       // Chỉ tạo mới nếu chưa có dữ liệu
       if (!docSnap.exists()) {
         await setDoc(userRef, {          
-          // 2. Email
           email: user.email,
-          
-          // 3. Tên hiển thị
           displayName: user.displayName || "Người dùng mới",
-          
-          // 4. Avatar (Lưu ý: field tên là photo_url)
           photo_url: user.photoURL || "https://i.pravatar.cc/300",
           
-          // 5. Phân quyền (Mặc định là user)
-          role: "user", 
+          // --- Thêm các trường mới theo yêu cầu ---
+          isVerified: true,  // Đã vào đến đây là coi như đã xác thực
+          location: "",      // Để trống chờ cập nhật sau
           
-          // 6. Ngày tạo
+          role: "user", 
           createdAt: Timestamp.now(),
         });
         console.log("--> Đã tạo User mới thành công!");
@@ -65,26 +63,70 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  // --- HÀM 1: ĐĂNG NHẬP THƯỜNG ---
+  // --- HÀM 1: ĐĂNG NHẬP THƯỜNG (CÓ CHECK EMAIL) ---
   const handleLogin = async () => {
     if (email === '' || password === '') {
       Alert.alert('Thông báo', 'Vui lòng nhập email và mật khẩu');
       return;
     }
     setLoading(true);
+    
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      // Kiểm tra data user thường (đề phòng trường hợp tạo acc nhưng chưa có data)
-      await checkAndCreateUserData(userCredential.user);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+
+      // 🔥 1. KIỂM TRA NGOẠI LỆ CHO ADMIN
+      const isAdmin = user.email.toLowerCase() === "admin@vibeplate.com";
+
+      // 🔥 2. NẾU KHÔNG PHẢI ADMIN -> BẮT BUỘC CHECK XÁC THỰC
+      if (!isAdmin) {
+          if (!user.emailVerified) {
+              const creationTime = new Date(user.metadata.creationTime).getTime();
+              const now = Date.now();
+              const oneDayMs = 24 * 60 * 60 * 1000; // 24 giờ
+
+              // A. Nếu quá 24h -> XÓA LUÔN
+              if (now - creationTime > oneDayMs) {
+                  try {
+                      await deleteUser(user);
+                      Alert.alert("Hết hạn", "Tài khoản tạo quá 24h chưa xác thực đã bị xóa. Vui lòng đăng ký lại.");
+                  } catch (err) {
+                      await signOut(auth); // Lỗi xóa thì cứ logout ra
+                  }
+                  setLoading(false);
+                  return; // ⛔️ DỪNG LẠI
+              }
+
+              // B. Nếu chưa quá 24h -> NHẮC NHỞ
+              Alert.alert(
+                  "Chưa xác thực", 
+                  "Vui lòng kiểm tra email để kích hoạt tài khoản.",
+                  [
+                      { 
+                          text: "Gửi lại Email", 
+                          onPress: () => sendEmailVerification(user).then(() => signOut(auth)) 
+                      },
+                      { text: "Đóng", onPress: () => signOut(auth) }
+                  ]
+              );
+              setLoading(false);
+              return; // ⛔️ DỪNG LẠI
+          }
+      }
+
+      // 🔥 3. NẾU ĐÃ XÁC THỰC (HOẶC LÀ ADMIN) -> TẠO DATA VÀ CHO VÀO
+      await checkAndCreateUserData(user);
       console.log("Đăng nhập thường thành công");
+      
     } catch (error) {
-      Alert.alert('Lỗi đăng nhập', error.message);
+      let msg = error.message;
+      if(error.code === 'auth/invalid-credential') msg = "Sai email hoặc mật khẩu!";
+      Alert.alert('Lỗi đăng nhập', msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- HÀM 2: ĐĂNG NHẬP GOOGLE ---
   // --- HÀM 2: ĐĂNG NHẬP GOOGLE ---
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -92,23 +134,20 @@ export default function LoginScreen({ navigation }) {
       // A. CHẠY TRÊN WEB
       if (Platform.OS === 'web') {
         const provider = new GoogleAuthProvider();
-        // Thêm dòng này để Web cũng bắt chọn tài khoản
         provider.setCustomParameters({ prompt: 'select_account' }); 
-        await signInWithPopup(auth, provider);
-        // ... (phần xử lý user như cũ)
+        const result = await signInWithPopup(auth, provider);
+        await checkAndCreateUserData(result.user); // Web cũng phải tạo data
       } 
       
       // B. CHẠY TRÊN MOBILE (Android/iOS)
       else {
         await GoogleSignin.hasPlayServices();
         
-        // --- 🔥 THÊM ĐOẠN NÀY ĐỂ LUÔN CHO CHỌN TÀI KHOẢN ---
         try {
           await GoogleSignin.signOut();
         } catch (error) {
           // Bỏ qua lỗi nếu chưa đăng nhập trước đó
         }
-        // ----------------------------------------------------
 
         const userInfo = await GoogleSignin.signIn();
         const idToken = userInfo.data?.idToken || userInfo.idToken; 
@@ -121,7 +160,7 @@ export default function LoginScreen({ navigation }) {
         // Gọi hàm tạo data rút gọn
         await checkAndCreateUserData(userCredential.user);
         
-        Alert.alert("Chào mừng", `Xin chào ${userCredential.user.displayName}!`);
+        console.log("Đăng nhập Google thành công");
       }
 
     } catch (error) {
@@ -168,7 +207,7 @@ export default function LoginScreen({ navigation }) {
         onPress={handleGoogleLogin}
         disabled={loading}
       >
-        <Text style={styles.buttonText}>G   Tiếp tục với Google</Text>
+        <Text style={styles.buttonText}>G    Tiếp tục với Google</Text>
       </TouchableOpacity>
 
       <TouchableOpacity 
