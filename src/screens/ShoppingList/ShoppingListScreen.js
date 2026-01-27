@@ -1,42 +1,87 @@
-import React, { useLayoutEffect, useState } from 'react';
+import React, { useLayoutEffect, useState, useEffect } from 'react';
+import { 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  updateDoc 
+} from 'firebase/firestore';
+import { db, auth } from '../../firebase/firebaseConfig'; 
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  SafeAreaView, TextInput, FlatList, Alert, Keyboard
+  SafeAreaView, TextInput, FlatList, Alert, Keyboard, Modal, ActivityIndicator
 } from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
 
 const COLORS = {
-  primary: '#111111',
-  bg: '#FFFFFF',
-  textMain: '#111111',
-  textSub: '#6B7280',
-  border: '#E5E7EB',
-  card: '#FFFFFF',
-  check: '#9CA3AF',
+  primary: '#111111', bg: '#FFFFFF', textMain: '#111111', textSub: '#6B7280',
+  border: '#E5E7EB', card: '#FFFFFF', check: '#9CA3AF', modalBg: 'rgba(0,0,0,0.5)', btnBg: '#F3F4F6', 
 };
+const UNITS = ['kg', 'g', 'mg', 'l', 'ml', 'quả', 'cái', 'hộp', 'gói', 'chai', 'lon', 'bó'];
 
 export default function ShoppingListScreen({ navigation }) {
 
-  const [items, setItems] = useState([
-    { id: '1', name: '500g Thịt bò', isBought: false },
-    { id: '2', name: 'Hành tây, tỏi', isBought: true },
-    { id: '3', name: 'Nước mắm Nam Ngư', isBought: false },
-  ]);
-
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+   
+  // State nhập liệu
   const [newItemName, setNewItemName] = useState('');
+  const [newItemQuantity, setNewItemQuantity] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState('kg');
+   
+  // State Modal Sửa
+  const [isEditModalVisible, setEditModalVisible] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
+   
+  const [editName, setEditName] = useState('');
+  const [editQuantity, setEditQuantity] = useState('');
+  const [editUnit, setEditUnit] = useState('kg');
+   
+  const [isUnitModalVisible, setUnitModalVisible] = useState(false);
+  const [isSelectingForEdit, setIsSelectingForEdit] = useState(false); 
 
+  // --- 1. LẤY DỮ LIỆU (THEO UID USER) ---
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    // Kiểm tra UID thay vì email
+    if (!currentUser || !currentUser.uid) {
+        setItems([]); 
+        setLoading(false);
+        return;
+    }
+
+    // 🔥 SỬA: Dùng currentUser.uid làm tên Document thay vì email
+    const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+
+    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        let currentList = data.myList || [];
+        
+        // Sắp xếp client-side (pending lên đầu)
+        currentList.sort((a, b) => {
+             if (a.status === 'pending' && b.status === 'completed') return -1;
+             if (a.status === 'completed' && b.status === 'pending') return 1;
+             return 0;
+        });
+
+        setItems(currentList);
+      } else {
+        setItems([]);
+      }
+      setLoading(false);
+    }, (error) => {
+      console.log("Lỗi tải data:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []); 
+   
+  // Setup Header
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerTransparent: true,
-      headerTitle: "Giỏ đi chợ",
-      headerTintColor: COLORS.textMain,
-      headerLeft: () => (
-        <MenuImage
-          onPress={() => {
-            navigation.openDrawer();
-          }}
-        />
-      ),
+      headerTransparent: true, headerTitle: "Giỏ đi chợ", headerTintColor: COLORS.textMain,
+      headerLeft: () => (<MenuImage onPress={() => navigation.openDrawer()} />),
       headerRight: () => (
         items.length > 0 ? (
           <TouchableOpacity style={{ marginRight: 18 }} onPress={handleClearAll}>
@@ -47,236 +92,237 @@ export default function ShoppingListScreen({ navigation }) {
     });
   }, [navigation, items]);
 
-  const handleAddItem = () => {
-    if (newItemName.trim().length === 0) return;
-    const newItem = {
-      id: Date.now().toString(),
-      name: newItemName,
-      isBought: false,
-    };
-    setItems([newItem, ...items]);
-    setNewItemName('');
-    Keyboard.dismiss();
+  // --- 2. THÊM MỚI (Lưu vào Document ID là UID) ---
+  const handleAddItem = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    if (newItemName.trim() === '') { Alert.alert("Lỗi", "Chưa nhập tên món!"); return; }
+
+    try {
+      // 🔥 SỬA: Object không chứa userId hay userEmail nữa
+      const newItem = {
+        itemId: Date.now().toString(),
+        name: newItemName,
+        quantity: Number(newItemQuantity) || 1,
+        unit: selectedUnit,
+        status: 'pending',
+        updatedAt: new Date()
+      };
+
+      const updatedList = [...items, newItem];
+
+      // 🔥 SỬA: Lưu vào document có ID là UID
+      const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+      await setDoc(userDocRef, { myList: updatedList });
+
+      setNewItemName(''); setNewItemQuantity(''); setSelectedUnit('kg');
+      Keyboard.dismiss();
+    } catch (error) {
+      Alert.alert("Lỗi thêm món", error.message);
+    }
   };
 
-  const toggleItem = (id) => {
-    const updatedItems = items.map(item =>
-      item.id === id ? { ...item, isBought: !item.isBought } : item
-    );
-    updatedItems.sort((a, b) => Number(a.isBought) - Number(b.isBought));
-    setItems(updatedItems);
+  // --- 3. CẬP NHẬT (Sửa trong Mảng) ---
+  const handleUpdateItem = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !editingItemId) return;
+
+    try {
+      const updatedList = items.map(item => {
+        if (item.itemId === editingItemId) {
+            return {
+                ...item,
+                name: editName,
+                quantity: Number(editQuantity) || 1,
+                unit: editUnit,
+                updatedAt: new Date()
+            };
+        }
+        return item;
+      });
+
+      // 🔥 SỬA: Update vào document UID
+      const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+      await updateDoc(userDocRef, { myList: updatedList });
+       
+      setEditModalVisible(false); setEditingItemId(null);
+    } catch (error) { Alert.alert("Lỗi update", error.message); }
   };
 
-  const handleDeleteItem = (id) => {
-    setItems(items.filter(item => item.id !== id));
+  // Toggle trạng thái
+  const toggleItemStatus = async (itemId) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+        const updatedList = items.map(item => {
+            if (item.itemId === itemId) {
+                return {
+                    ...item,
+                    status: item.status === 'pending' ? 'completed' : 'pending',
+                    updatedAt: new Date()
+                };
+            }
+            return item;
+        });
+
+        // 🔥 SỬA: Update vào document UID
+        const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+        await updateDoc(userDocRef, { myList: updatedList });
+
+    } catch (error) { console.log(error); }
   };
 
-  const handleClearAll = () => {
-    Alert.alert("Xác nhận", "Xóa toàn bộ danh sách?", [
+  // Xóa món
+  const handleDeleteItem = async (itemId) => {
+    const currentUser = auth.currentUser;
+    Alert.alert("Xóa?", "Bạn chắc chắn xóa?", [
       { text: "Hủy", style: "cancel" },
-      { text: "Xóa", style: "destructive", onPress: () => setItems([]) }
+      { text: "Xóa", style: "destructive", onPress: async () => {
+          try {
+            const updatedList = items.filter(item => item.itemId !== itemId);
+            // 🔥 SỬA: Update vào document UID
+            const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+            await setDoc(userDocRef, { myList: updatedList });
+          } catch (error) { Alert.alert("Lỗi", "Không xóa được"); }
+      }}
     ]);
   };
 
-  const total = items.length;
-  const boughtCount = items.filter(i => i.isBought).length;
-  const progress = total === 0 ? 0 : (boughtCount / total) * 100;
+  // Xóa hết (Dọn giỏ)
+  const handleClearAll = () => {
+    const currentUser = auth.currentUser;
+    Alert.alert("Dọn sạch giỏ?", "Thao tác này sẽ xóa hết món ăn.", [
+      { text: "Hủy", style: "cancel" },
+      { text: "Xóa hết", style: "destructive", onPress: async () => {
+          // 🔥 SỬA: Update vào document UID
+          const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+          await setDoc(userDocRef, { myList: [] });
+      }}
+    ]);
+  };
 
-  const renderItem = ({ item }) => (
-    <View style={[styles.itemCard, item.isBought && styles.itemCardBought]}>
-      <TouchableOpacity
-        style={[styles.checkBox, item.isBought && styles.checkBoxActive]}
-        onPress={() => toggleItem(item.id)}
-      >
-        {item.isBought && (
-          <Image
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828643.png' }}
-            style={{ width: 12, height: 12, tintColor: '#fff' }}
-          />
-        )}
-      </TouchableOpacity>
+  // --- UI COMPONENTS ---
+  const openUnitModal = (forEdit = false) => { setIsSelectingForEdit(forEdit); setUnitModalVisible(true); };
+  const handleSelectUnit = (unit) => {
+    if (isSelectingForEdit) setEditUnit(unit); else setSelectedUnit(unit);
+    setUnitModalVisible(false);
+  };
 
-      <TouchableOpacity style={{ flex: 1 }} onPress={() => toggleItem(item.id)}>
-        <Text style={[styles.itemText, item.isBought && styles.itemTextBought]}>
-          {item.name}
-        </Text>
-      </TouchableOpacity>
+  const renderItem = ({ item }) => {
+    const isCompleted = item.status === 'completed';
+    return (
+        <View style={[styles.itemCard, isCompleted && styles.itemCardBought]}>
+        
+        <TouchableOpacity 
+            style={[styles.checkBox, isCompleted && styles.checkBoxActive]} 
+            onPress={() => toggleItemStatus(item.itemId)}
+        >
+            {isCompleted && <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828643.png' }} style={{ width: 12, height: 12, tintColor: '#fff' }} />}
+        </TouchableOpacity>
 
-      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteItem(item.id)}>
-        <Image
-          source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png' }}
-          style={{ width: 20, height: 20, tintColor: '#9CA3AF' }}
-        />
-      </TouchableOpacity>
-    </View>
-  );
+        <TouchableOpacity style={{ flex: 1 }} onPress={() => toggleItemStatus(item.itemId)}>
+            <View>
+                <Text style={[styles.itemText, isCompleted && styles.itemTextBought]} numberOfLines={1}>
+                    {item.name} {item.quantity ? `(${item.quantity} ${item.unit || ''})` : ''}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#999', marginTop: 2 }}>
+                    {isCompleted ? 'Đã mua' : 'Chưa mua'}
+                </Text>
+            </View>
+        </TouchableOpacity>
+
+        <View style={styles.actionGroup}>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => {
+                setEditName(item.name); 
+                setEditQuantity(String(item.quantity)); 
+                setEditUnit(item.unit || 'kg');
+                setEditingItemId(item.itemId); 
+                setEditModalVisible(true);
+            }}>
+            <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828911.png' }} style={{ width: 16, height: 16, tintColor: COLORS.textMain }} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.actionBtn, { marginLeft: 8 }]} onPress={() => handleDeleteItem(item.itemId)}>
+            <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png' }} style={{ width: 16, height: 16, tintColor: '#EF4444' }} />
+            </TouchableOpacity>
+        </View>
+        </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-
-      <View style={styles.progressContainer}>
-        <View style={styles.progressHeader}>
-          <Text style={styles.progressTitle}>Tiến độ</Text>
-          <Text style={styles.progressValue}>{boughtCount}/{total}</Text>
-        </View>
-
-        <View style={styles.progressBarBg}>
-          <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-        </View>
-      </View>
-
+      <View style={styles.progressContainer}><Text style={styles.progressTitle}>Danh sách mua sắm</Text></View>
       <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Thêm món cần mua..."
-          placeholderTextColor={COLORS.textSub}
-          value={newItemName}
-          onChangeText={setNewItemName}
-          onSubmitEditing={handleAddItem}
-        />
-        <TouchableOpacity style={styles.addBtn} onPress={handleAddItem}>
-          <Image
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/748/748113.png' }}
-            style={{ width: 18, height: 18, tintColor: '#fff' }}
-          />
-        </TouchableOpacity>
+        <TextInput style={[styles.input, { flex: 2 }]} placeholder="Tên món..." value={newItemName} onChangeText={setNewItemName} />
+        <View style={styles.divider} />
+        <TextInput style={[styles.input, { flex: 0.8, textAlign: 'center' }]} placeholder="SL" keyboardType='numeric' value={newItemQuantity} onChangeText={setNewItemQuantity} />
+        <TouchableOpacity style={styles.unitBtn} onPress={() => openUnitModal(false)}><Text style={styles.unitText}>{selectedUnit} ▼</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.addBtn} onPress={handleAddItem}><Text style={{color: 'white', fontSize: 20}}>+</Text></TouchableOpacity>
       </View>
+      {loading ? <ActivityIndicator size="large" color={COLORS.textMain} style={{marginTop: 50}} /> : 
+          <FlatList data={items} keyExtractor={item => item.itemId} renderItem={renderItem} contentContainerStyle={styles.listContent} 
+          ListEmptyComponent={() => <View style={styles.emptyContainer}><Text style={styles.emptyText}>Danh sách trống</Text></View>} />
+      }
+      
+      {/* Unit Modal */}
+      <Modal visible={isUnitModalVisible} transparent={true} onRequestClose={() => setUnitModalVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setUnitModalVisible(false)}>
+             <View style={styles.modalContent}><View style={styles.unitGrid}>{UNITS.map(u => (
+                    <TouchableOpacity key={u} style={[styles.unitOption, (isSelectingForEdit ? editUnit : selectedUnit) === u && styles.unitOptionSelected]} onPress={() => handleSelectUnit(u)}>
+                        <Text style={[(isSelectingForEdit ? editUnit : selectedUnit) === u && styles.unitOptionTextSelected]}>{u}</Text>
+                    </TouchableOpacity>))}</View></View>
+        </TouchableOpacity>
+      </Modal>
 
-      <FlatList
-        data={items}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <Image
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4076/4076549.png' }}
-              style={{ width: 80, height: 80, opacity: 0.6, marginBottom: 12 }}
-            />
-            <Text style={styles.emptyText}>Danh sách đang trống.</Text>
-          </View>
-        )}
-      />
-
+      {/* Edit Modal */}
+      <Modal visible={isEditModalVisible} transparent={true} onRequestClose={() => setEditModalVisible(false)}>
+         <TouchableOpacity style={styles.modalOverlay} onPress={() => setEditModalVisible(false)}>
+            <View style={styles.editModalContent}><Text style={styles.modalTitle}>Sửa món hàng</Text>
+                <TextInput style={styles.editInput} value={editName} onChangeText={setEditName} />
+                <View style={{flexDirection: 'row', gap: 10}}>
+                    <TextInput style={[styles.editInput, {flex: 1}]} value={editQuantity} onChangeText={setEditQuantity} keyboardType="numeric"/>
+                    <TouchableOpacity style={[styles.editUnitBtn, {flex: 1}]} onPress={() => openUnitModal(true)}><Text>{editUnit} ▼</Text></TouchableOpacity>
+                </View>
+                <TouchableOpacity onPress={handleUpdateItem} style={[styles.btnAction, {backgroundColor: COLORS.textMain}]}><Text style={{color: 'white'}}>Lưu</Text></TouchableOpacity>
+            </View>
+         </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-
-  progressContainer: {
-    marginTop: 90,
-    marginHorizontal: 20,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  progressTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textMain,
-  },
-  progressValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textMain,
-  },
-  progressBarBg: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.border,
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: COLORS.textMain,
-  },
-
-  inputContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    fontSize: 16,
-    color: COLORS.textMain,
-  },
-  addBtn: {
-    width: 36,
-    height: 36,
-    backgroundColor: COLORS.textMain,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 50,
-  },
-
-  itemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.card,
-    padding: 12,
-    marginBottom: 10,
-  },
-  itemCardBought: {
-    backgroundColor: '#F3F4F6',
-  },
-  checkBox: {
-    width: 22,
-    height: 22,
-    borderWidth: 2,
-    borderColor: COLORS.textMain,
-    borderRadius: 6,
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkBoxActive: {
-    backgroundColor: COLORS.textMain,
-    borderColor: COLORS.textMain,
-  },
-  itemText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.textMain,
-  },
-  itemTextBought: {
-    color: COLORS.check,
-    textDecorationLine: 'line-through',
-  },
-  deleteBtn: {
-    padding: 6,
-    marginLeft: 10,
-  },
-
-  emptyContainer: {
-    alignItems: 'center',
-    marginTop: 60,
-  },
-  emptyText: {
-    marginTop: 8,
-    color: COLORS.textSub,
-  },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  progressContainer: { marginTop: 60, marginHorizontal: 20 },
+  progressTitle: { fontSize: 20, fontWeight: 'bold' },
+  inputContainer: { flexDirection: 'row', marginHorizontal: 20, marginTop: 16, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', height: 50 },
+  divider: { width: 1, height: '60%', backgroundColor: COLORS.border, marginHorizontal: 5 },
+  input: { height: '100%', fontSize: 16, color: COLORS.textMain },
+  unitBtn: { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: COLORS.btnBg, borderRadius: 6, marginRight: 8 },
+  unitText: { fontSize: 14, fontWeight: '600' },
+  addBtn: { width: 36, height: 36, backgroundColor: COLORS.textMain, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  listContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 50 },
+  itemCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card, padding: 12, marginBottom: 10 },
+  itemCardBought: { backgroundColor: '#F3F4F6' },
+  checkBox: { width: 22, height: 22, borderWidth: 2, borderColor: COLORS.textMain, borderRadius: 6, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
+  checkBoxActive: { backgroundColor: COLORS.textMain },
+  itemText: { fontSize: 16, fontWeight: '500' },
+  itemTextBought: { color: COLORS.check, textDecorationLine: 'line-through' },
+  actionGroup: { flexDirection: 'row', marginLeft: 8 },
+  actionBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: COLORS.btnBg, justifyContent: 'center', alignItems: 'center' },
+  emptyContainer: { alignItems: 'center', marginTop: 60 },
+  emptyText: { color: COLORS.textSub },
+  modalOverlay: { flex: 1, backgroundColor: COLORS.modalBg, justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: '80%', backgroundColor: 'white', padding: 20, borderRadius: 16 },
+  editModalContent: { width: '85%', backgroundColor: 'white', padding: 20, borderRadius: 16 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  unitGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  unitOption: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border },
+  unitOptionSelected: { backgroundColor: COLORS.textMain, borderColor: COLORS.textMain },
+  unitOptionTextSelected: { color: 'white' },
+  editInput: { borderWidth: 1, borderColor: '#ddd', padding: 10, marginBottom: 15, borderRadius: 8, height: 45 },
+  editUnitBtn: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 15, backgroundColor: '#F9FAFB' },
+  btnAction: { padding: 12, alignItems: 'center', borderRadius: 8, marginTop: 10 }
 });
