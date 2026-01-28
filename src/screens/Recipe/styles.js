@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   categoryText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2CD18A',
+    color: '#000000',
     letterSpacing: 0.5,
   },
   metaItem: {
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   checkIcon: {
     width: 12,
     height: 12,
-    tintColor: '#2CD18A',
+    tintColor: '#000000',
   },
   ingredientIcon: {
     width: 20,
