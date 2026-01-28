@@ -1,13 +1,13 @@
-import React, { useLayoutEffect, useState, useEffect } from 'react'; // Thêm useState, useEffect
+import React, { useLayoutEffect, useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, SafeAreaView 
+  View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, SafeAreaView, ActivityIndicator 
 } from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
 
 // --- IMPORT FIREBASE ---
-import { auth, db } from '../../firebase/firebaseConfig'; // Thêm db
+import { auth, db } from '../../firebase/firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore'; // Thêm hàm đọc dữ liệu
+import { doc, collection, query, where, onSnapshot } from 'firebase/firestore'; 
 
 // --- BẢNG MÀU ĐỒNG BỘ ---
 const COLORS = {
@@ -26,15 +26,18 @@ const COLORS = {
 
 export default function AccountScreen({ navigation }) {
 
-  const interests = ["Healthy", "Món Nhật", "BBQ"];
-  const allergies = ["Đậu phộng", "Sữa"];
-
-  // Lấy thông tin User Auth
+  // Lấy thông tin User Auth hiện tại
   const user = auth.currentUser;
   
-  // State để lưu trạng thái Admin
+  // --- STATES ---
   const [isAdmin, setIsAdmin] = useState(false);
+  const [favoriteCount, setFavoriteCount] = useState(0);
+  const [contributionCount, setContributionCount] = useState(0);
+  
+  // State lưu avatar để cập nhật realtime
+  const [currentAvatar, setCurrentAvatar] = useState(user?.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png');
 
+  // --- CONFIG HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
       title: '', 
@@ -47,39 +50,70 @@ export default function AccountScreen({ navigation }) {
     });
   }, []);
 
-  // --- LOGIC KIỂM TRA QUYỀN ADMIN ---
+  // --- 1. LẮNG NGHE THÔNG TIN USER (ROLE & AVATAR) ---
+  // Dùng onSnapshot để khi bên InfoAccount cập nhật, bên này tự đổi theo ngay lập tức
   useEffect(() => {
-    const checkUserRole = async () => {
-      if (user?.email) {
-        try {
-          // Lưu ý: Dựa vào code Login trước đó, ID của user là email viết thường
-          const docId = user.email.toLowerCase();
-          const userRef = doc(db, "users", docId);
-          const docSnap = await getDoc(userRef);
+    if (!user?.email) return;
 
-          if (docSnap.exists()) {
-            const userData = docSnap.data();
-            // Kiểm tra trường 'role' trong database
-            if (userData.role === 'admin') {
-              setIsAdmin(true);
-            }
-          }
-        } catch (error) {
-          console.log("Lỗi check role:", error);
+    const userRef = doc(db, "users", user.email.toLowerCase());
+
+    const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        // 1. Check Admin
+        if (data.role === 'admin') {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
+
+        // 2. Cập nhật Avatar (Ưu tiên lấy từ Firestore photo_url)
+        if (data.photo_url) {
+          setCurrentAvatar(data.photo_url);
+        } else if (user.photoURL) {
+          setCurrentAvatar(user.photoURL);
         }
       }
-    };
-    checkUserRole();
+    }, (error) => {
+       console.log("Lỗi lắng nghe user:", error);
+    });
+
+    return () => unsubscribeUser();
   }, [user]);
 
+  // --- 2. LOGIC ĐẾM SỐ LƯỢNG (REAL-TIME) ---
+  useEffect(() => {
+    if (!user) return;
+
+    // A. Đếm số món yêu thích
+    const favQuery = query(collection(db, "favorites"), where("userId", "==", user.uid));
+    const unsubscribeFav = onSnapshot(favQuery, (snapshot) => {
+        setFavoriteCount(snapshot.size);
+    });
+
+    // B. Đếm số món đóng góp
+    const contribQuery = query(collection(db, "suggested_recipes"), where("authorId", "==", user.uid));
+    const unsubscribeContrib = onSnapshot(contribQuery, (snapshot) => {
+        setContributionCount(snapshot.size);
+    });
+
+    return () => {
+        unsubscribeFav();
+        unsubscribeContrib();
+    };
+  }, [user]);
+
+  // --- XỬ LÝ ĐĂNG XUẤT ---
   const handleLogout = () => {
-    Alert.alert("Đăng xuất", "Hẹn gặp lại bạn nhé?", [
+    Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
       { text: "Hủy", style: "cancel" },
       { 
         text: "Đăng xuất", 
         onPress: async () => {
           try {
             await signOut(auth);
+            // Navigation sẽ tự động chuyển về Login do AuthListener trong App.js (nếu có)
           } catch (error) {
             Alert.alert("Lỗi", error.message);
           }
@@ -89,11 +123,11 @@ export default function AccountScreen({ navigation }) {
   };
 
   const StatItem = ({ number, label, onPress }) => (
-  <TouchableOpacity onPress={onPress} style={{ alignItems: 'center', flex: 1 }}>
-    <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textMain }}>{number}</Text>
-    <Text style={{ fontSize: 12, color: COLORS.textSub, marginTop: 4 }}>{label}</Text>
-  </TouchableOpacity>
-);
+    <TouchableOpacity onPress={onPress} style={{ alignItems: 'center', flex: 1 }}>
+      <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textMain }}>{number}</Text>
+      <Text style={{ fontSize: 12, color: COLORS.textSub, marginTop: 4 }}>{label}</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
@@ -103,10 +137,9 @@ export default function AccountScreen({ navigation }) {
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <Image 
-              source={{ uri: user?.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png' }} 
+              source={{ uri: currentAvatar }} 
               style={styles.avatar} 
             />
-            {/* Nếu là Admin thì hiện badge Admin cho ngầu */}
             {isAdmin && (
                <View style={[styles.editBadge, {backgroundColor: COLORS.admin}]}>
                  <Text style={{fontSize: 8, color: '#fff', fontWeight: 'bold'}}>ADMIN</Text>
@@ -117,15 +150,16 @@ export default function AccountScreen({ navigation }) {
           <Text style={styles.name}>{user?.displayName || "VibePlate Chef"}</Text>
           <Text style={styles.email}>{user?.email || "No Email"}</Text>
 
+          {/* KHU VỰC THỐNG KÊ */}
           <View style={styles.statsContainer}>
             <StatItem 
-              number="25" 
-              label="Món đã lưu" 
-              onPress={() => navigation.navigate('SavedDishes')}
+              number={favoriteCount} 
+              label="Món yêu thích" 
+              onPress={() => navigation.navigate('SavedDishes')} 
             />
             <View style={styles.dividerVertical} />
             <StatItem 
-              number="12" 
+              number={contributionCount} 
               label="Món đã đóng góp" 
               onPress={() => navigation.navigate('ContributedDishes')}
             />
@@ -146,48 +180,14 @@ export default function AccountScreen({ navigation }) {
           </View>
         </TouchableOpacity>
 
-        {/* --- 3. SỞ THÍCH --- */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-             <Text style={styles.cardTitle}>Hồ sơ khẩu vị</Text>
-             <TouchableOpacity><Text style={styles.linkText}>Sửa</Text></TouchableOpacity>
-          </View>
-
-          <View style={{marginBottom: 15}}>
-             <Text style={styles.label}>Yêu thích ❤️</Text>
-             <View style={styles.tagRow}>
-                {interests.map((item, index) => (
-                  <View key={index} style={styles.tagGreen}>
-                    <Text style={styles.textGreen}>{item}</Text>
-                  </View>
-                ))}
-                <TouchableOpacity style={styles.addTagBtn}>
-                   <Text style={{color: COLORS.primary}}>+ Thêm</Text>
-                </TouchableOpacity>
-             </View>
-          </View>
-
-          <View>
-             <Text style={styles.label}>Dị ứng / Kiêng kỵ ⚠️</Text>
-             <View style={styles.tagRow}>
-                {allergies.map((item, index) => (
-                  <View key={index} style={styles.tagRed}>
-                    <Text style={styles.textRed}>{item}</Text>
-                  </View>
-                ))}
-             </View>
-          </View>
-        </View>
-
-        {/* --- 4. TÀI KHOẢN & CÀI ĐẶT --- */}
+        {/* --- 3. MENU TÀI KHOẢN & CÀI ĐẶT --- */}
         <View style={styles.card}>
            
-           {/* --- 🌟 NÚT QUẢN LÝ DỮ LIỆU (CHỈ HIỆN VỚI ADMIN) --- */}
+           {/* NÚT ADMIN (Chỉ hiện nếu là Admin) */}
            {isAdmin && (
              <TouchableOpacity 
                   style={styles.menuItem} 
                   onPress={() => navigation.navigate('AdminDataManagement')} 
-                  // Lưu ý: Nhớ tạo màn hình 'AdminDataManagement' và khai báo trong Stack Navigator
              >
                 <View style={[styles.menuIcon, {backgroundColor: COLORS.adminBg}]}>
                    <Image 
@@ -200,6 +200,7 @@ export default function AccountScreen({ navigation }) {
              </TouchableOpacity>
            )}
 
+           {/* Thông tin tài khoản */}
            <TouchableOpacity 
                 style={styles.menuItem} 
                 onPress={() => navigation.navigate('InfoAccount')}
@@ -214,6 +215,22 @@ export default function AccountScreen({ navigation }) {
               <Text style={styles.arrow}>›</Text>
            </TouchableOpacity>
            
+           {/* Cá nhân hóa (Nếu bạn có màn hình này) */}
+           <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => navigation.navigate('Personalization')} 
+           >
+              <View style={[styles.menuIcon, {backgroundColor: '#FFF4E5'}]}> 
+                 <Image 
+                   source={{uri: 'https://cdn-icons-png.flaticon.com/512/2099/2099122.png'}} 
+                   style={{width: 20, height: 20, tintColor: '#FF9F43'}}
+                 />
+              </View>
+              <Text style={styles.menuText}>Cá nhân hóa</Text>
+              <Text style={styles.arrow}>›</Text>
+           </TouchableOpacity>
+
+           {/* Đăng xuất */}
            <TouchableOpacity 
                 style={[styles.menuItem, {borderBottomWidth: 0}]} 
                 onPress={handleLogout}
@@ -228,14 +245,13 @@ export default function AccountScreen({ navigation }) {
            </TouchableOpacity>
         </View>
 
-        <Text style={styles.versionText}>VibePlate v1.0.2</Text>
+        <Text style={styles.versionText}>VibePlate v1.0.3</Text>
 
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// Giữ nguyên Styles phía dưới...
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 40 },
   profileSection: { alignItems: 'center', marginBottom: 25 },
@@ -276,19 +292,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 20,
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03, shadowRadius: 5, elevation: 2,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textMain },
-  linkText: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
-  label: { fontSize: 13, color: COLORS.textSub, marginBottom: 10, fontWeight: '600' },
-  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tagGreen: { backgroundColor: COLORS.primaryLight, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
-  textGreen: { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
-  tagRed: { backgroundColor: COLORS.dangerBg, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
-  textRed: { color: COLORS.danger, fontWeight: '600', fontSize: 13 },
-  addTagBtn: {
-    borderWidth: 1, borderColor: COLORS.primary, borderStyle: 'dashed',
-    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
   },
   menuItem: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 15,
