@@ -139,7 +139,7 @@ export default function RecipeScreen(props) {
                 time: item.time,
                 servings: item.servings,
                 categoryId: item.categoryId,
-                userId: user.uid, // Lưu thêm userId để lọc nếu cần
+                email: user.email, 
                 addedAt: serverTimestamp() // Thời gian thêm
             };
             await setDoc(docRef, favoriteData);

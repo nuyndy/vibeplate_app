@@ -6,11 +6,11 @@ import styles from './styles';
 
 // 🔥 BỘ ICON 3D CUTE
 const moodOptions = [
-  { key: "happy", label: "Vui vẻ", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203770.png" },
-  { key: "sad", label: "Buồn", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203774.png" },
-  { key: "tired", label: "Mệt mỏi", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203848.png" },
-  { key: "hungry", label: "Đói meo", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203798.png" },
-  { key: "neutral", label: "Bình thường", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203840.png" },
+  { key: "happy", label: "Vui vẻ", icon: "🤩" },
+  { key: "sad", label: "Buồn", icon: "😟" },
+  { key: "tired", label: "Mệt mỏi", icon: "🥱" },
+  { key: "hungry", label: "Đói meo", icon: "🤤" },
+  { key: "neutral", label: "Bình thường", icon: "😑" },
 ];
 
 export default function HeaderSection({
