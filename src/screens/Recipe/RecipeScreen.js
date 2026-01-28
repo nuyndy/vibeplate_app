@@ -1,16 +1,29 @@
 import React, { useLayoutEffect, useRef, useState, useEffect } from "react";
-import {
-  ScrollView,
-  Text,
-  View,
-  Image,
-  Dimensions,
-  TouchableOpacity,
-  StatusBar,
-  Alert,
-  ActivityIndicator,
-  StyleSheet
+// 1. Thêm dòng này để dùng được View, Text, Alert...
+import { 
+  View, 
+  Text, 
+  Image, 
+  TouchableOpacity, 
+  ScrollView, 
+  ActivityIndicator, 
+  StyleSheet, 
+  StatusBar, 
+  Alert, 
+  Dimensions 
 } from "react-native";
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  deleteDoc, 
+  serverTimestamp, 
+  writeBatch // <--- Nhớ thêm cái này
+} from "firebase/firestore";
 import { useSharedValue } from 'react-native-reanimated';
 import Carousel, { Pagination } from 'react-native-reanimated-carousel';
 
@@ -21,7 +34,6 @@ import styles from "./styles"; // Import styles gốc (bạn có thể giữ fil
 
 // --- FIREBASE IMPORTS ---
 import { auth, db } from '../../firebase/firebaseConfig';
-import { collection, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
 const { width: viewportWidth, height: viewportHeight } = Dimensions.get("window");
 
@@ -191,8 +203,33 @@ export default function RecipeScreen(props) {
     });
   };
 
-  // --- HÀM THÊM VÀO GIỎ ĐI CHỢ ---
-  const addToShoppingList = async (missingItems) => {
+ // --- HÀM HELPER: Tách chuỗi định lượng (VD: "300g" -> sl: 300, đv: g) ---
+  const parseQuantity = (quantityString) => {
+    if (!quantityString) return { qty: 1, unit: 'cái' };
+
+    // Regex tìm số ở đầu chuỗi (hỗ trợ số thập phân dấu chấm hoặc phẩy)
+    // VD: "300 g", "1.5 kg", "1,2 lit"
+    const regex = /^(\d+(?:[.,]\d+)?)\s*(.*)$/;
+    const match = quantityString.toString().trim().match(regex);
+
+    if (match) {
+      return {
+        // Chuyển dấu phẩy thành chấm để ép kiểu số chuẩn
+        qty: parseFloat(match[1].replace(',', '.')), 
+        // Phần còn lại là đơn vị (bỏ khoảng trắng thừa)
+        unit: match[2].trim() || 'cái' 
+      };
+    }
+    
+    // Trường hợp không tìm thấy số (VD: "Một ít", "Vừa đủ")
+    // Thì giữ nguyên chuỗi đó làm đơn vị, số lượng để là 1
+    return { qty: 1, unit: quantityString };
+  };
+
+  // Đừng quên import writeBatch và collection ở trên cùng file RecipeScreen.js nhé:
+// import { ..., writeBatch, collection, doc } from "firebase/firestore";
+
+const addToShoppingList = async (missingItems) => {
     const user = auth.currentUser;
     if (!user) {
         Alert.alert("Lỗi", "Bạn cần đăng nhập để dùng tính năng này");
@@ -200,31 +237,45 @@ export default function RecipeScreen(props) {
     }
 
     try {
-        const userDocRef = doc(db, 'shoppingList', user.uid);
-        const docSnap = await getDoc(userDocRef);
-        let currentList = [];
-        if (docSnap.exists()) {
-            currentList = docSnap.data().myList || [];
-        }
+        // 1. Khởi tạo một batch (lô hàng) để gửi đi một lần
+        const batch = writeBatch(db);
 
-        const newItemsToAdd = missingItems.map((item, index) => ({
-            itemId: Date.now().toString() + index, 
-            name: item[0].name,
-            quantity: 1,      
-            unit: 'cái',      
-            status: 'pending', 
-            updatedAt: new Date()
-        }));
+        missingItems.forEach((item, index) => {
+            // item[1] chứa chuỗi định lượng (VD: "300g")
+            const rawQuantity = item[1];
+            
+            // Tách số lượng và đơn vị
+            const { qty, unit } = parseQuantity(rawQuantity);
 
-        const updatedList = [...currentList, ...newItemsToAdd];
-        await setDoc(userDocRef, { myList: updatedList });
+            // 2. Tạo reference cho document mới (tự sinh ID)
+            // Lưu ý: collection phải đúng tên là 'shoppingList' như bên file kia
+            const newDocRef = doc(collection(db, "shoppingList"));
 
-        Alert.alert("Thành công", `Đã thêm ${missingItems.length} món vào danh sách đi chợ!`);
+            // 3. Chuẩn bị dữ liệu y hệt cấu trúc bên ShoppingListScreen.js
+            const newItemData = {
+                email: user.email,       // Quan trọng: để lọc đúng user
+                userId: user.email,      // Thêm trường này nếu bên kia query theo 'userId'
+                name: item[0].name,      // Tên nguyên liệu
+                quantity: qty,           // Số lượng (số)
+                unit: unit,              // Đơn vị (chuỗi)
+                status: 'pending',       // Trạng thái mặc định
+                updatedAt: new Date()    // Thời gian
+            };
+
+            // 4. Thêm lệnh tạo document vào batch
+            batch.set(newDocRef, newItemData);
+        });
+
+        // 5. Gửi toàn bộ dữ liệu đi (Commit)
+        await batch.commit();
+
+        Alert.alert("Thành công", `Đã thêm ${missingItems.length} món vào giỏ đi chợ!`);
+        
     } catch (error) {
         console.error("Lỗi thêm giỏ hàng:", error);
         Alert.alert("Lỗi", "Không thể thêm vào giỏ hàng lúc này.");
     }
-  };
+};
 
   // --- XỬ LÝ NÚT BẮT ĐẦU NẤU ---
   const handleStartCooking = () => {
