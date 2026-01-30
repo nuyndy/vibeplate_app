@@ -139,7 +139,7 @@ export default function RecipeScreen(props) {
                 time: item.time,
                 servings: item.servings,
                 categoryId: item.categoryId,
-                email: user.email, 
+                userId: user.uid, // Lưu thêm userId để lọc nếu cần
                 addedAt: serverTimestamp() // Thời gian thêm
             };
             await setDoc(docRef, favoriteData);
@@ -275,46 +275,53 @@ export default function RecipeScreen(props) {
 
   // --- RENDER NGUYÊN LIỆU HÌNH TRÒN (Horizontal Item) ---
   const renderHorizontalIngredient = (ingredientArr, index) => {
-    const data = ingredientArr[0];    
+    const data = ingredientArr[0]; 
     const quantity = ingredientArr[1]; 
+    
     if (!data) return null;
 
     const isAvailable = checkIngredientAvailable(data.name, pantryData);
 
     return (
-        <View key={index} style={customStyles.ingredientItemContainer}>
-            {/* Vòng tròn ảnh */}
+        <TouchableOpacity 
+            key={index} 
+            style={customStyles.ingredientItemContainer}
+            onPress={() => navigation.navigate("Ingredient", { ingredient: data })}
+        >
+            {/* Vòng tròn ảnh: Nền TRẮNG hoàn toàn */}
             <View style={[
                 customStyles.ingredientCircle, 
-                isAvailable ? { borderColor: '#a0a1a1', borderWidth: 2 } : { borderColor: '#eee', borderWidth: 1 }
+                // Sử dụng viền đen dày hơn một chút nếu có sẵn thay vì dùng màu xanh
+                isAvailable ? { borderColor: '#000', borderWidth: 1.5 } : { borderColor: '#F0F0F0', borderWidth: 1 }
             ]}>
                 {data.photo_url ? (
                     <Image source={{ uri: data.photo_url }} style={customStyles.ingredientImage} />
                 ) : (
                     <Image 
                         source={{uri: 'https://cdn-icons-png.flaticon.com/512/706/706164.png'}} 
-                        style={[customStyles.ingredientImage, { tintColor: '#ccc' }]} 
+                        style={[customStyles.ingredientImage, { tintColor: '#EEE' }]} 
                     />
                 )}
                 
-                {/* Icon tick nhỏ nếu có sẵn */}
+                {/* Badge trạng thái: Đen trắng */}
                 {isAvailable && (
                     <View style={customStyles.statusBadge}>
-                         <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/190/190411.png'}} style={{width:10, height:10}} />
+                         <Image 
+                            source={{uri: 'https://cdn-icons-png.flaticon.com/512/190/190411.png'}} 
+                            style={{width: 10, height: 10, tintColor: '#FFF'}} 
+                         />
                     </View>
                 )}
             </View>
 
-            {/* Tên nguyên liệu */}
-            <Text style={[customStyles.ingredientNameText, isAvailable && { color: '#000000', fontWeight: 'bold' }]} numberOfLines={3}>
-                {data.name} 
+            <Text style={[customStyles.ingredientNameText, isAvailable && { fontWeight: '800' }]} numberOfLines={2}>
+                {data.name}
             </Text>
             
-            {/* Số lượng */}
             <Text style={customStyles.ingredientQtyText}>
                 {quantity}
             </Text>
-        </View>
+        </TouchableOpacity>
     );
   };
 
@@ -389,7 +396,7 @@ export default function RecipeScreen(props) {
             <Text style={styles.sectionTitle}>Nguyên liệu cần thiết</Text>
             
             {isLoadingIngredients ? (
-                <ActivityIndicator size="small" color="#000000" style={{marginTop: 20}} />
+                <ActivityIndicator size="small" color="#ff9800" style={{marginTop: 20}} />
             ) : ingredientsData.length === 0 ? (
                 <Text style={{ fontStyle: 'italic', color: '#999', marginTop: 10 }}>Chưa có thông tin nguyên liệu</Text>
             ) : (
@@ -436,7 +443,7 @@ const customStyles = StyleSheet.create({
         width: 65,
         height: 65,
         borderRadius: 32.5, // Bo tròn tuyệt đối
-        backgroundColor: '#ffffff',
+        backgroundColor: '#F5F5F5',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 8,
@@ -457,17 +464,18 @@ const customStyles = StyleSheet.create({
         color: '#333',
         textAlign: 'center',
         fontWeight: '500',
-        height: 20, // Giới hạn chiều cao text để thẳng hàng
+        height: 32, // Giới hạn chiều cao text để thẳng hàng
     },
     ingredientQtyText: {
         fontSize: 11,
         color: '#888',
+        marginTop: 2
     },
     statusBadge: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        backgroundColor: '#bac4c0',
+        backgroundColor: '#32ba7c',
         width: 18,
         height: 18,
         borderRadius: 9,

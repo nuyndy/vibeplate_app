@@ -71,11 +71,13 @@ export default function CategoriesScreen(props) {
   };
 
   const renderCategory = ({ item }) => (
-    <TouchableHighlight underlayColor="rgba(73,182,77,0.9)" onPress={() => onPressCategory(item)}>
+    <TouchableHighlight 
+      underlayColor="#eeecec" 
+      onPress={() => onPressCategory(item)}
+    >
       <View style={styles.categoriesItemContainer}>
         <Image style={styles.categoriesPhoto} source={{ uri: item.photo_url }} />
         <Text style={styles.categoriesName}>{item.name}</Text>
-        {/* 3. Hiển thị số lượng đã được lấy sẵn trong state */}
         <Text style={styles.categoriesInfo}>{item.recipeCount} món</Text>
       </View>
     </TouchableHighlight>
@@ -85,7 +87,8 @@ export default function CategoriesScreen(props) {
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#2cd18a" />
+        {/* 🔥 ĐÃ SỬA: Đổi màu loading từ xanh lá sang Cam Đỏ */}
+        <ActivityIndicator size="large" color="#FF6347" />
       </View>
     );
   }

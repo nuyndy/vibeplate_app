@@ -1,40 +1,46 @@
 import React, { useLayoutEffect, useState, useEffect } from "react";
-import { FlatList, Text, View, Image, TouchableHighlight, ActivityIndicator } from "react-native";
+import { FlatList, Text, View, Image, TouchableHighlight, ActivityIndicator, Dimensions } from "react-native";
 import styles from "./styles";
-// Import các hàm từ Service mới
-import { getIngredientUrl, getRecipesByIngredient, getAllCategories } from "../../data/MockDataAPI";
+// Import API
+import { getRecipesByIngredient, getAllCategories } from "../../data/MockDataAPI"; 
 
 export default function IngredientScreen(props) {
   const { navigation, route } = props;
 
-  const ingredientId = route.params?.ingredient;
-  const ingredientName = route.params?.name;
+  // --- 1. NHẬN DỮ LIỆU TỪ NAVIGATION ---
+  // Lấy object 'ingredient' được truyền từ RecipeScreen
+  const ingredientData = route.params?.ingredient; 
+  
+  // Trích xuất thông tin an toàn
+  const ingredientId = ingredientData?.ingredientId || ingredientData?.id; 
+  const ingredientName = ingredientData?.name;
+  const ingredientPhoto = ingredientData?.photo_url;
 
-  // 1. Khai báo State để lưu dữ liệu
+  // --- 2. STATES ---
   const [recipesData, setRecipesData] = useState([]);
-  const [ingredientImgUrl, setIngredientImgUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Set Title cho Header
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: route.params?.name,
+      title: ingredientName,
     });
-  }, []);
+  }, [navigation, ingredientName]);
 
-  // 2. Fetch dữ liệu từ Firebase
+  // --- 3. FETCH DỮ LIỆU (MÓN ĂN & DANH MỤC) ---
   useEffect(() => {
     const fetchData = async () => {
+      if (!ingredientId) return;
+
+      setIsLoading(true);
       try {
-        // Gọi 3 API cùng lúc: Lấy ảnh nguyên liệu, Lấy món ăn, Lấy danh mục (để ghép tên)
-        const [url, recipes, categories] = await Promise.all([
-            getIngredientUrl(ingredientId),
+        // Gọi 2 API: Lấy món ăn theo nguyên liệu & Lấy tất cả danh mục
+        const [recipes, categories] = await Promise.all([
             getRecipesByIngredient(ingredientId),
             getAllCategories()
         ]);
 
-        setIngredientImgUrl(url);
-
-        // Tạo Map Category để tra cứu nhanh
+        // Tạo Map Category để tra cứu nhanh (ID -> Name)
         const categoryMap = {};
         categories.forEach(cat => {
             categoryMap[cat.id] = cat.name;
@@ -43,7 +49,7 @@ export default function IngredientScreen(props) {
         // Ghép tên Category vào từng Recipe
         const mergedRecipes = recipes.map(recipe => ({
             ...recipe,
-            categoryName: categoryMap[recipe.categoryId] || "Unknown Category"
+            categoryName: categoryMap[recipe.categoryId] || "Khác"
         }));
 
         setRecipesData(mergedRecipes);
@@ -56,42 +62,43 @@ export default function IngredientScreen(props) {
     };
 
     fetchData();
-  }, [ingredientId]); // Chạy lại nếu ingredientId thay đổi
+  }, [ingredientId]); 
 
+  // --- HANDLERS ---
   const onPressRecipe = (item) => {
-    navigation.navigate("Recipe", { item });
+    navigation.push("Recipe", { item });
   };
 
   const renderRecipes = ({ item }) => (
-    <TouchableHighlight underlayColor="rgba(73,182,77,0.9)" onPress={() => onPressRecipe(item)}>
+    <TouchableHighlight underlayColor="rgba(255, 255, 255, 0.9)" onPress={() => onPressRecipe(item)}>
       <View style={styles.container}>
         <Image style={styles.photo} source={{ uri: item.photo_url }} />
-        <Text style={styles.title}>{item.title}</Text>
-        {/* Hiển thị tên category đã xử lý */}
+        <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
         <Text style={styles.category}>{item.categoryName}</Text>
       </View>
     </TouchableHighlight>
   );
 
+  // --- HEADER CỦA LIST ---
   const ListHeader = () => (
-    <>
-      <View style={{ borderBottomWidth: 0.4, marginBottom: 10, borderBottomColor: "grey" }}>
-        {/* Kiểm tra nếu có url thì mới hiện ảnh */}
-        {ingredientImgUrl ? (
-             <Image style={styles.photoIngredient} source={{ uri: ingredientImgUrl }} />
+    <View style={styles.headerContainer}>
+      <View style={styles.imageContainer}>
+        {ingredientPhoto ? (
+             <Image style={styles.photoIngredient} source={{ uri: ingredientPhoto }} />
         ) : (
-            // Có thể hiển thị ảnh placeholder nếu không tìm thấy ảnh
-            <View style={[styles.photoIngredient, { backgroundColor: '#ccc' }]} /> 
+             <Image 
+                style={[styles.photoIngredient, { tintColor: '#ccc' }]} 
+                source={{ uri: 'https://cdn-icons-png.flaticon.com/512/706/706164.png' }} 
+             /> 
         )}
       </View>
-      <Text style={styles.ingredientInfo}>Recipes with {ingredientName}:</Text>
-    </>
+    </View>
   );
 
   if (isLoading) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#2cd18a" />
+          <ActivityIndicator size="large" color="#a0a3a2" />
         </View>
       );
   }
@@ -99,13 +106,14 @@ export default function IngredientScreen(props) {
   return (
     <View style={styles.mainContainer}>
       <FlatList
-        ListHeaderComponent={ListHeader}
         vertical
         showsVerticalScrollIndicator={false}
         numColumns={2}
-        data={recipesData} // Dùng state
+        data={recipesData}
         renderItem={renderRecipes}
-        keyExtractor={(item) => `${item.id}`} // Đổi recipeId thành item.id (theo Firebase)
+        keyExtractor={(item) => `${item.recipeId || item.id}`} // Đảm bảo key duy nhất
+        ListHeaderComponent={ListHeader}
+        contentContainerStyle={{ paddingBottom: 20 }}
       />
     </View>
   );

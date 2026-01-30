@@ -18,7 +18,6 @@ import RecipesListScreen from '../screens/RecipesList/RecipesListScreen';
 import DrawerContainer from '../screens/DrawerContainer/DrawerContainer';
 import IngredientScreen from '../screens/Ingredient/IngredientScreen';
 import SearchScreen from '../screens/Search/SearchScreen';
-import IngredientsDetailsScreen from '../screens/IngredientsDetails/IngredientsDetailsScreen';
 import PantryScreen from '../screens/Pantry/PantryScreen';
 import ChatScreen from '../screens/Chat/ChatScreen';
 import DishNominationScreen from '../screens/DishNomination/DishNominationScreen';
@@ -60,7 +59,6 @@ function MainNavigator() {
       <Stack.Screen name='RecipesList' component={RecipesListScreen} />
       <Stack.Screen name='Ingredient' component={IngredientScreen} />
       <Stack.Screen name='Search' component={SearchScreen} />
-      <Stack.Screen name='IngredientsDetails' component={IngredientsDetailsScreen} />
       <Stack.Screen name='Pantry' component={PantryScreen} />
       
       {/* --- Màn hình Chat AI --- */}
