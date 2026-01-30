@@ -161,8 +161,8 @@ export default function DishNominationScreen({ navigation }) {
 
       const newRecipeData = {
         id: newDocId,
-        authorId: user ? user.uid : 'anonymous', 
-        authorName: user ? (user.displayName || user.email) : 'Ẩn danh',
+        authorId: user.email,
+        authorName: user.displayName || user.email,
         
         recipeId: Number(newDocId),
         title: dishName,
@@ -170,7 +170,6 @@ export default function DishNominationScreen({ navigation }) {
         time: Number(time),
         servings: Number(servings),
         
-        // --- QUAN TRỌNG: THEO YÊU CẦU CỦA BẠN ---
         description: description, // Toàn bộ nội dung cách làm nằm ở đây
         steps: [],                // Mảng steps để rỗng
         
@@ -185,7 +184,7 @@ export default function DishNominationScreen({ navigation }) {
 
       await setDoc(doc(db, 'suggested_recipes', newDocId), newRecipeData);
 
-      Alert.alert("Thành công! 👨‍🍳", "Đã gửi công thức chờ duyệt.", [
+      Alert.alert("Thành công!", "Đã gửi công thức chờ duyệt.", [
         { text: "OK", onPress: () => navigation.goBack() }
       ]);
     } catch (error) {
@@ -232,11 +231,11 @@ export default function DishNominationScreen({ navigation }) {
             <View style={styles.rowInputs}>
               <View style={styles.halfInput}>
                 <Text style={styles.label}>Thời gian (phút)</Text>
-                <TextInput style={styles.input} placeholder="30" keyboardType="numeric" value={time} onChangeText={setTime} />
+                <TextInput style={styles.input} placeholder="30" placeholderTextColor={COLORS.placeholder} keyboardType="numeric" value={time} onChangeText={setTime} />
               </View>
               <View style={styles.halfInput}>
                 <Text style={styles.label}>Khẩu phần (người)</Text>
-                <TextInput style={styles.input} placeholder="2" keyboardType="numeric" value={servings} onChangeText={setServings} />
+                <TextInput style={styles.input} placeholder="2" placeholderTextColor={COLORS.placeholder} keyboardType="numeric" value={servings} onChangeText={setServings} />
               </View>
             </View>
           </View>
@@ -257,7 +256,8 @@ export default function DishNominationScreen({ navigation }) {
 
               <TextInput 
                 style={[styles.input, {flex: 1, height: 50}]} 
-                placeholder="SL (200g)" 
+                placeholder="Lượng" 
+                placeholderTextColor={COLORS.placeholder}
                 value={tempQty} 
                 onChangeText={setTempQty} 
               />
@@ -283,6 +283,7 @@ export default function DishNominationScreen({ navigation }) {
             <TextInput 
                style={[styles.input, {height: 150, padding: 10, textAlignVertical: 'top'}]} 
                placeholder="Bước 1: Sơ chế...&#10;Bước 2: Nấu...&#10;Bước 3: Hoàn thiện..." 
+               placeholderTextColor={COLORS.placeholder}
                multiline 
                value={description} 
                onChangeText={setDescription} 
@@ -293,8 +294,11 @@ export default function DishNominationScreen({ navigation }) {
                 <Text style={styles.label}>Ảnh minh họa thêm (Tùy chọn):</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{flexDirection: 'row', marginTop: 10}}>
                     {/* Nút thêm ảnh */}
-                    <TouchableOpacity style={styles.addPhotoBtn} onPress={() => pickImage('extra')}>
-                        <Text style={{fontSize: 24, color: '#ccc'}}>+</Text>
+                    <TouchableOpacity 
+                      style={styles.addPhotoDashBox} 
+                      onPress={() => pickImage('extra')}>
+                      <Text style={styles.bigPlus}>+</Text>
+                      <Text style={styles.subTextPlus}>Thêm ảnh</Text>
                     </TouchableOpacity>
 
                     {/* List ảnh đã chọn */}

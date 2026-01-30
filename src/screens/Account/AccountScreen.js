@@ -93,7 +93,7 @@ export default function AccountScreen({ navigation }) {
     });
 
     // B. Đếm số món đóng góp
-    const contribQuery = query(collection(db, "suggested_recipes"), where("authorId", "==", user.uid));
+    const contribQuery = query(collection(db, "suggested_recipes"), where("authorId", "==", user.email));
     const unsubscribeContrib = onSnapshot(contribQuery, (snapshot) => {
         setContributionCount(snapshot.size);
     });

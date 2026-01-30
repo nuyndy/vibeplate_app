@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Image, TouchableOpacity,ScrollView } from "react-native";
 import { differenceInDays } from 'date-fns';
 
 // Firebase Imports
@@ -8,6 +8,7 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 
 import MenuImage from "../../components/MenuImage/MenuImage";
+import RecipeNotification from './RecipeNotification';
 
 export default function NotificationScreen(props) {
   const { navigation } = props;
@@ -74,8 +75,11 @@ export default function NotificationScreen(props) {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={{paddingBottom: 20}}>
+      <RecipeNotification navigation={navigation} />
       {hasExpiredItems ? (
+
+        
         // --- TRƯỜNG HỢP CÓ ĐỒ HẾT HẠN/QUÁ HẠN ---
         <TouchableOpacity 
             style={styles.notificationCard}
@@ -106,7 +110,7 @@ export default function NotificationScreen(props) {
             <Text style={{color: '#999', marginTop: 5}}>Không có đồ hết hạn hay quá hạn</Text>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
