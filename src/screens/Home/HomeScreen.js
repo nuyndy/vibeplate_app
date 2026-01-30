@@ -197,8 +197,8 @@ export default function HomeScreen(props) {
         <View style={localStyles.modalOverlay}>
           <View style={localStyles.modalContent}>
             <View style={localStyles.iconCircle}><Ionicons name="time-outline" size={30} color="#000" /></View>
-            <Text style={localStyles.modalTitle}>THỰC PHẨM CẦN XỬ LÝ</Text>
-            <Text style={localStyles.modalSub}>Bạn có {expiringItems.length} nguyên liệu sắp hết hạn. Đừng để lãng phí nhé!</Text>
+            <Text style={localStyles.modalTitle}>CÓ THỰC PHẨM CẦN XỬ LÝ</Text>
+            <Text style={localStyles.modalSub}>Đừng để lãng phí nhé!</Text>
             <TouchableOpacity style={localStyles.btnPrimary} onPress={() => { setModalVisible(false); navigation.navigate("Pantry"); }}>
               <Text style={localStyles.btnText}>KIỂM TRA KHO BẾP</Text>
             </TouchableOpacity>
