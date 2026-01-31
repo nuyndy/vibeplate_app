@@ -10,6 +10,7 @@ const styles = StyleSheet.create({
     borderColor: '#cccccc',
     borderWidth: 0.5,
     borderRadius: 20,
+    backgroundColor: 'white', 
   },
   categoriesPhoto: {
     width: '100%',
@@ -17,13 +18,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    shadowColor: 'blue',
+    shadowColor: '#000', 
     shadowOffset: {
       width: 0,
       height: 3
     },
     shadowRadius: 5,
-    shadowOpacity: 1.0,
+    shadowOpacity: 0.2,
     elevation: 3
   },
   categoriesName: {
@@ -36,9 +37,11 @@ const styles = StyleSheet.create({
   },
   categoriesInfo: {
     marginTop: 3,
-    marginBottom: 5
+    marginBottom: 5,
+    color: '#727272', 
+    fontWeight: '600',
+    fontSize: 14
   }
 });
 
 export default styles;
-

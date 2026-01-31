@@ -44,7 +44,7 @@ export default function LoginScreen({ navigation }) {
         await setDoc(userRef, {          
           email: user.email,
           displayName: user.displayName || "Người dùng mới",
-          photo_url: user.photoURL || "https://i.pravatar.cc/300",
+          photo_url: user.photoURL || "https://i.pinimg.com/736x/93/0b/21/930b2170b904835c0331d82f0b4f7951.jpg",
           
           // --- Thêm các trường mới theo yêu cầu ---
           isVerified: true,  
