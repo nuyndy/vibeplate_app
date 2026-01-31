@@ -7,6 +7,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import MenuImage from "../../components/MenuImage/MenuImage";
 import { Ionicons } from '@expo/vector-icons';
 import RecipeNotification from './RecipeNotification';
+import { Ionicons } from '@expo/vector-icons'; // Sử dụng thêm icon vector cho nhẹ app
 
 export default function NotificationScreen(props) {
   const { navigation } = props;
