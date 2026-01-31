@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useLayoutEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, SafeAreaView } from "react-native";
+import React, { useState, useEffect, useLayoutEffect, useCallback } from "react";
+import { 
+  View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, 
+  ScrollView, SafeAreaView, RefreshControl, Alert 
+} from "react-native";
 import { differenceInDays, startOfDay } from 'date-fns';
 import { auth, db } from '../../firebase/firebaseConfig';
-import { collection, query, where, onSnapshot, getDoc, doc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, getDoc, doc, getDocs } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import MenuImage from "../../components/MenuImage/MenuImage";
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +17,7 @@ export default function NotificationScreen(props) {
   const [pendingCount, setPendingCount] = useState(0);
   const [expiredCount, setExpiredCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -23,20 +27,61 @@ export default function NotificationScreen(props) {
     });
   }, []);
 
+  // --- HÀM TẢI DỮ LIỆU (Dùng cho cả useEffect và Reload) ---
+  const fetchData = async (user) => {
+    if (!user) return;
+    try {
+      // 1. Kiểm tra quyền Admin
+      const userDoc = await getDoc(doc(db, "users", user.email));
+      const userRole = userDoc.data()?.role;
+      const checkAdmin = userRole === 'admin';
+      setIsAdmin(checkAdmin);
+
+      // 2. Đếm các món đang chờ (nếu là admin)
+      if (checkAdmin) {
+        const qPending = query(collection(db, "suggested_recipes"), where("status", "==", "pending"));
+        const snapPending = await getDocs(qPending);
+        setPendingCount(snapPending.size);
+      }
+
+      // 3. Kiểm tra tủ lạnh
+      const qInv = query(collection(db, "inventory"), where("email", "==", user.email));
+      const snapInv = await getDocs(qInv);
+      const today = startOfDay(new Date());
+      let count = 0;
+      
+      snapInv.docs.forEach(d => {
+        const data = d.data();
+        let expDate = data.expiryDate?.toDate ? startOfDay(data.expiryDate.toDate()) : startOfDay(new Date(data.expiryDate));
+        if (differenceInDays(expDate, today) <= 3) count++;
+      });
+      setExpiredCount(count);
+      
+    } catch (error) {
+      console.log("Lỗi tải thông báo:", error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // --- XỬ LÝ REFRESH ---
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    if (auth.currentUser) {
+      fetchData(auth.currentUser);
+    } else {
+      setRefreshing(false);
+      Alert.alert("Thông báo", "Bạn cần đăng nhập để cập nhật thông báo.");
+    }
+  }, []);
+
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
-        const userDoc = await getDoc(doc(db, "users", user.email));
-        const userRole = userDoc.data()?.role;
-        const checkAdmin = userRole === 'admin';
-        setIsAdmin(checkAdmin);
-
-        let unsubPending = () => {};
-        if (checkAdmin) {
-          const qPending = query(collection(db, "suggested_recipes"), where("status", "==", "pending"));
-          unsubPending = onSnapshot(qPending, (snap) => setPendingCount(snap.size));
-        }
-
+        fetchData(user);
+        
+        // Vẫn giữ onSnapshot để cập nhật Realtime mượt mà
         const qInv = query(collection(db, "inventory"), where("email", "==", user.email));
         const unsubInv = onSnapshot(qInv, (snapshot) => {
           const today = startOfDay(new Date());
@@ -47,23 +92,45 @@ export default function NotificationScreen(props) {
             if (differenceInDays(expDate, today) <= 3) count++;
           });
           setExpiredCount(count);
-          setIsLoading(false);
         });
-        return () => { unsubPending(); unsubInv(); };
-      } else { setIsLoading(false); }
+
+        return () => unsubInv();
+      } else {
+        setIsLoading(false);
+      }
     });
     return () => unsubscribeAuth();
   }, []);
 
-  if (isLoading) return <View style={styles.loadingContainer}><ActivityIndicator size="small" color="#000" /></View>;
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="small" color="#000" />
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={{flex: 1, backgroundColor: '#FBFCFE'}}>
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#FBFCFE' }}>
+      <ScrollView 
+        contentContainerStyle={styles.contentContainer} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#000" // Màu vòng xoay trên iOS
+            colors={["#000"]} // Màu vòng xoay trên Android
+          />
+        }
+      >
         
         {/* THÔNG BÁO ADMIN */}
         {isAdmin && pendingCount > 0 && (
-          <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('AdminDataManagement', { tab: 'suggested_recipes' })}>
+          <TouchableOpacity 
+            style={styles.card} 
+            onPress={() => navigation.navigate('AdminDataManagement', { tab: 'suggested_recipes' })}
+          >
             <View style={[styles.statusIndicator, { backgroundColor: '#096b3a' }]} />
             <View style={styles.cardMain}>
               <View style={styles.row}>
@@ -71,9 +138,9 @@ export default function NotificationScreen(props) {
                   <Ionicons name="shield-checkmark" size={12} color="#096b3a" />
                   <Text style={[styles.tagText, { color: '#096b3a' }]}>QUẢN TRỊ VIÊN</Text>
                 </View>
-                <Text style={styles.timeText}>Yêu cầu mới</Text>
+                <Text style={styles.timeText}>Vừa cập nhật</Text>
               </View>
-              <Text style={styles.contentTitle}>Có {pendingCount} món ăn đang chờ duyệt</Text>
+              <Text style={styles.contentTitle}>Bạn có {pendingCount} yêu cầu phê duyệt công thức mới</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -88,20 +155,22 @@ export default function NotificationScreen(props) {
                   <Ionicons name="alert-circle" size={12} color="#ff0015" />
                   <Text style={[styles.tagText, { color: '#ff0015' }]}>KIỂM TRA TỦ LẠNH</Text>
                 </View>
-                <Text style={styles.timeText}>Sắp hết hạn</Text>
+                <Text style={styles.timeText}>Gấp</Text>
               </View>
-              <Text style={styles.contentTitle}>Có {expiredCount} thực phẩm cần sử dụng ngay</Text>
+              <Text style={styles.contentTitle}>Phát hiện {expiredCount} nguyên liệu sắp hết hạn. Xem ngay!</Text>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* THÔNG BÁO NGƯỜI DÙNG */}
+        {/* THÔNG BÁO NGƯỜI DÙNG TỪ COMPONENT CON */}
         <RecipeNotification navigation={navigation} />
 
-        {!isAdmin && expiredCount === 0 && pendingCount === 0 && (
+        {/* MÀN HÌNH TRỐNG */}
+        {!isAdmin && expiredCount === 0 && (
            <View style={styles.emptyContainer}>
              <Ionicons name="leaf-outline" size={60} color="#E0E0E0" />
-             <Text style={styles.emptyText}>Mọi thứ đều ổn</Text>
+             <Text style={styles.emptyText}>Hiện tại chưa có thông báo mới nào</Text>
+             <Text style={styles.emptySubText}>Hãy vuốt xuống để làm mới nếu cần</Text>
            </View>
         )}
       </ScrollView>
@@ -110,7 +179,7 @@ export default function NotificationScreen(props) {
 }
 
 const styles = StyleSheet.create({
-  contentContainer: { padding: 16 },
+  contentContainer: { padding: 16, flexGrow: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center' },
   card: {
     backgroundColor: '#fff', borderRadius: 20, marginBottom: 12,
@@ -124,7 +193,8 @@ const styles = StyleSheet.create({
   tag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
   tagText: { fontSize: 10, fontWeight: '800' },
   timeText: { fontSize: 11, color: '#BBB' },
-  contentTitle: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
-  emptyContainer: { alignItems: 'center', marginTop: 100 },
-  emptyText: { color: '#CCC', fontWeight: 'bold', marginTop: 10 }
+  contentTitle: { fontSize: 15, fontWeight: '700', color: '#1A1A1A', lineHeight: 22 },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 100 },
+  emptyText: { color: '#888', fontWeight: 'bold', marginTop: 10, fontSize: 16 },
+  emptySubText: { color: '#CCC', fontSize: 13, marginTop: 5 }
 });

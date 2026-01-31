@@ -1,70 +1,74 @@
-import React, { useLayoutEffect, useState, useEffect } from "react";
-import { FlatList, Text, View, Image, TouchableHighlight, ActivityIndicator, Dimensions } from "react-native";
+import React, { useLayoutEffect, useState, useEffect, useCallback } from "react";
+import { 
+  FlatList, 
+  Text, 
+  View, 
+  Image, 
+  TouchableHighlight, 
+  ActivityIndicator, 
+  RefreshControl // <--- 1. Thêm RefreshControl
+} from "react-native";
 import styles from "./styles";
-// Import API
 import { getRecipesByIngredient, getAllCategories } from "../../data/MockDataAPI"; 
 
 export default function IngredientScreen(props) {
   const { navigation, route } = props;
 
-  // --- 1. NHẬN DỮ LIỆU TỪ NAVIGATION ---
-  // Lấy object 'ingredient' được truyền từ RecipeScreen
   const ingredientData = route.params?.ingredient; 
-  
-  // Trích xuất thông tin an toàn
   const ingredientId = ingredientData?.ingredientId || ingredientData?.id; 
   const ingredientName = ingredientData?.name;
   const ingredientPhoto = ingredientData?.photo_url;
 
-  // --- 2. STATES ---
+  // --- STATES ---
   const [recipesData, setRecipesData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // <--- 2. State reload
 
-  // Set Title cho Header
   useLayoutEffect(() => {
     navigation.setOptions({
       title: ingredientName,
     });
   }, [navigation, ingredientName]);
 
-  // --- 3. FETCH DỮ LIỆU (MÓN ĂN & DANH MỤC) ---
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!ingredientId) return;
+  // --- 3. HÀM FETCH DỮ LIỆU ---
+  const fetchData = useCallback(async () => {
+    if (!ingredientId) return;
 
-      setIsLoading(true);
-      try {
-        // Gọi 2 API: Lấy món ăn theo nguyên liệu & Lấy tất cả danh mục
-        const [recipes, categories] = await Promise.all([
-            getRecipesByIngredient(ingredientId),
-            getAllCategories()
-        ]);
+    try {
+      const [recipes, categories] = await Promise.all([
+          getRecipesByIngredient(ingredientId),
+          getAllCategories()
+      ]);
 
-        // Tạo Map Category để tra cứu nhanh (ID -> Name)
-        const categoryMap = {};
-        categories.forEach(cat => {
-            categoryMap[cat.id] = cat.name;
-        });
+      const categoryMap = {};
+      categories.forEach(cat => {
+          categoryMap[cat.id] = cat.name;
+      });
 
-        // Ghép tên Category vào từng Recipe
-        const mergedRecipes = recipes.map(recipe => ({
-            ...recipe,
-            categoryName: categoryMap[recipe.categoryId] || "Khác"
-        }));
+      const mergedRecipes = recipes.map(recipe => ({
+          ...recipe,
+          categoryName: categoryMap[recipe.categoryId] || "Khác"
+      }));
 
-        setRecipesData(mergedRecipes);
+      setRecipesData(mergedRecipes);
+    } catch (error) {
+      console.error("Error fetching ingredient details:", error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false); // Tắt hiệu ứng xoay
+    }
+  }, [ingredientId]);
 
-      } catch (error) {
-        console.error("Error fetching ingredient details:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
+  // --- 4. XỬ LÝ RELOAD ---
+  const onRefresh = () => {
+    setIsRefreshing(true);
     fetchData();
-  }, [ingredientId]); 
+  };
 
-  // --- HANDLERS ---
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const onPressRecipe = (item) => {
     navigation.push("Recipe", { item });
   };
@@ -79,7 +83,6 @@ export default function IngredientScreen(props) {
     </TouchableHighlight>
   );
 
-  // --- HEADER CỦA LIST ---
   const ListHeader = () => (
     <View style={styles.headerContainer}>
       <View style={styles.imageContainer}>
@@ -98,7 +101,7 @@ export default function IngredientScreen(props) {
   if (isLoading) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#a0a3a2" />
+          <ActivityIndicator size="large" color="#FF6347" />
         </View>
       );
   }
@@ -111,9 +114,18 @@ export default function IngredientScreen(props) {
         numColumns={2}
         data={recipesData}
         renderItem={renderRecipes}
-        keyExtractor={(item) => `${item.recipeId || item.id}`} // Đảm bảo key duy nhất
+        keyExtractor={(item) => `${item.recipeId || item.id}`}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{ paddingBottom: 20 }}
+        // --- 5. THÊM REFRESH CONTROL ---
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#000"   // iOS spinner màu đen
+            colors={["#000"]}  // Android spinner màu đen
+          />
+        }
       />
     </View>
   );

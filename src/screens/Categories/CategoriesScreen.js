@@ -1,19 +1,23 @@
-import React, { useLayoutEffect, useEffect, useState } from "react";
-import { FlatList, Text, View, Image, TouchableHighlight, ActivityIndicator } from "react-native";
+import React, { useLayoutEffect, useEffect, useState, useCallback } from "react";
+import { 
+  FlatList, 
+  Text, 
+  View, 
+  Image, 
+  TouchableHighlight, 
+  ActivityIndicator,
+  RefreshControl // <--- 1. Thêm RefreshControl
+} from "react-native";
 import styles from "./styles";
-// Bỏ import categories tĩnh từ dataArrays
-// import { categories } from "../../data/dataArrays"; 
-
-// Import các hàm async từ Service mới
 import { getAllCategories, getNumberOfRecipes } from "../../data/MockDataAPI"; 
 import MenuImage from "../../components/MenuImage/MenuImage";
 
 export default function CategoriesScreen(props) {
   const { navigation } = props;
   
-  // 1. Khai báo State để lưu dữ liệu và trạng thái loading
   const [categoriesData, setCategoriesData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // <--- 2. State cho trạng thái reload
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -34,35 +38,39 @@ export default function CategoriesScreen(props) {
     });
   }, []);
 
-  // 2. Gọi dữ liệu từ Firebase khi màn hình được Mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Lấy danh sách Categories
-        const rawCategories = await getAllCategories();
-        
-        // Với mỗi category, lấy thêm số lượng recipe tương ứng
-        // Dùng Promise.all để chạy song song cho nhanh
-        const categoriesWithCount = await Promise.all(
-          rawCategories.map(async (item) => {
-            const count = await getNumberOfRecipes(item.id);
-            return {
-              ...item,
-              recipeCount: count // Lưu số lượng vào object luôn
-            };
-          })
-        );
+  // 3. Hàm fetch dữ liệu dùng chung
+  const fetchData = useCallback(async () => {
+    try {
+      const rawCategories = await getAllCategories();
+      
+      const categoriesWithCount = await Promise.all(
+        rawCategories.map(async (item) => {
+          const count = await getNumberOfRecipes(item.id);
+          return {
+            ...item,
+            recipeCount: count 
+          };
+        })
+      );
 
-        setCategoriesData(categoriesWithCount);
-      } catch (error) {
-        console.error("Failed to fetch categories:", error);
-      } finally {
-        setIsLoading(false); // Tắt loading dù thành công hay thất bại
-      }
-    };
-
-    fetchData();
+      setCategoriesData(categoriesWithCount);
+    } catch (error) {
+      console.error("Failed to fetch categories:", error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false); // Tắt vòng xoay reload
+    }
   }, []);
+
+  // 4. Xử lý khi người dùng kéo xuống
+  const onRefresh = () => {
+    setIsRefreshing(true);
+    fetchData();
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const onPressCategory = (item) => {
     const title = item.name;
@@ -83,22 +91,29 @@ export default function CategoriesScreen(props) {
     </TouchableHighlight>
   );
 
-  // 4. Hiển thị Loading khi đang tải dữ liệu
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        {/* 🔥 ĐÃ SỬA: Đổi màu loading từ xanh lá sang Cam Đỏ */}
-        <ActivityIndicator size="large" color="#FF6347" />
+        <ActivityIndicator size="large" color="#000000" />
       </View>
     );
   }
 
   return (
-    <View>
+    <View style={{ flex: 1 }}>
       <FlatList 
-        data={categoriesData} // Dùng state thay vì biến tĩnh
+        data={categoriesData}
         renderItem={renderCategory} 
         keyExtractor={(item) => `${item.id}`} 
+        // 5. Thêm RefreshControl vào FlatList
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#000000" // Màu cho iOS
+            colors={["#000000"]} // Màu cho Android
+          />
+        }
       />
     </View>
   );

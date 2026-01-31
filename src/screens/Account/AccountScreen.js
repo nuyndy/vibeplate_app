@@ -1,6 +1,7 @@
-import React, { useLayoutEffect, useState, useEffect } from 'react';
+import React, { useLayoutEffect, useState, useEffect, useCallback } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, SafeAreaView, ActivityIndicator 
+  View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, 
+  SafeAreaView, ActivityIndicator, RefreshControl // <--- 1. Thêm RefreshControl
 } from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
 
@@ -9,7 +10,6 @@ import { auth, db } from '../../firebase/firebaseConfig';
 import { signOut } from 'firebase/auth';
 import { doc, collection, query, where, onSnapshot } from 'firebase/firestore'; 
 
-// --- BẢNG MÀU ĐỒNG BỘ ---
 const COLORS = {
   primary: '#000000',     
   primaryLight: '#d6dbd9', 
@@ -20,24 +20,19 @@ const COLORS = {
   textSub: '#A0A5B9',     
   danger: '#584343',      
   dangerBg: '#d3cbcb',
-  admin: '#4A90E2',      // Màu xanh cho Admin
-  adminBg: '#E1F0FF',    // Nền nhạt cho Admin
+  admin: '#4A90E2',      
+  adminBg: '#E1F0FF',    
 };
 
 export default function AccountScreen({ navigation }) {
-
-  // Lấy thông tin User Auth hiện tại
   const user = auth.currentUser;
   
-  // --- STATES ---
   const [isAdmin, setIsAdmin] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [contributionCount, setContributionCount] = useState(0);
-  
-  // State lưu avatar để cập nhật realtime
+  const [isRefreshing, setIsRefreshing] = useState(false); // <--- 2. State reload
   const [currentAvatar, setCurrentAvatar] = useState(user?.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png');
 
-  // --- CONFIG HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
       title: '', 
@@ -50,53 +45,43 @@ export default function AccountScreen({ navigation }) {
     });
   }, []);
 
-  // --- 1. LẮNG NGHE THÔNG TIN USER (ROLE & AVATAR) ---
-  // Dùng onSnapshot để khi bên InfoAccount cập nhật, bên này tự đổi theo ngay lập tức
+  // --- 3. HÀM RELOAD ---
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Ép Firebase cập nhật lại thông tin user auth (như emailVerified, photoURL mới nhất)
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+      }
+      // Vì chúng ta dùng onSnapshot, các dữ liệu Firestore sẽ tự động cập nhật ngay sau khi reload
+    } catch (error) {
+      console.log("Lỗi làm mới tài khoản:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user?.email) return;
-
     const userRef = doc(db, "users", user.email.toLowerCase());
-
     const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        
-        // 1. Check Admin
-        if (data.role === 'admin') {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
-        }
-
-        // 2. Cập nhật Avatar (Ưu tiên lấy từ Firestore photo_url)
-        if (data.photo_url) {
-          setCurrentAvatar(data.photo_url);
-        } else if (user.photoURL) {
-          setCurrentAvatar(user.photoURL);
-        }
+        setIsAdmin(data.role === 'admin');
+        if (data.photo_url) setCurrentAvatar(data.photo_url);
+        else if (user.photoURL) setCurrentAvatar(user.photoURL);
       }
-    }, (error) => {
-       console.log("Lỗi lắng nghe user:", error);
     });
-
     return () => unsubscribeUser();
   }, [user]);
 
-  // --- 2. LOGIC ĐẾM SỐ LƯỢNG (REAL-TIME) ---
   useEffect(() => {
     if (!user) return;
-
-    // A. Đếm số món yêu thích
     const favQuery = query(collection(db, "favorites"), where("userId", "==", user.uid));
-    const unsubscribeFav = onSnapshot(favQuery, (snapshot) => {
-        setFavoriteCount(snapshot.size);
-    });
+    const unsubscribeFav = onSnapshot(favQuery, (snapshot) => setFavoriteCount(snapshot.size));
 
-    // B. Đếm số món đóng góp
     const contribQuery = query(collection(db, "suggested_recipes"), where("authorId", "==", user.email));
-    const unsubscribeContrib = onSnapshot(contribQuery, (snapshot) => {
-        setContributionCount(snapshot.size);
-    });
+    const unsubscribeContrib = onSnapshot(contribQuery, (snapshot) => setContributionCount(snapshot.size));
 
     return () => {
         unsubscribeFav();
@@ -104,21 +89,12 @@ export default function AccountScreen({ navigation }) {
     };
   }, [user]);
 
-  // --- XỬ LÝ ĐĂNG XUẤT ---
   const handleLogout = () => {
     Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
       { text: "Hủy", style: "cancel" },
-      { 
-        text: "Đăng xuất", 
-        onPress: async () => {
-          try {
-            await signOut(auth);
-            // Navigation sẽ tự động chuyển về Login do AuthListener trong App.js (nếu có)
-          } catch (error) {
-            Alert.alert("Lỗi", error.message);
-          }
-        } 
-      }
+      { text: "Đăng xuất", onPress: async () => {
+          try { await signOut(auth); } catch (error) { Alert.alert("Lỗi", error.message); }
+      }}
     ]);
   };
 
@@ -131,15 +107,24 @@ export default function AccountScreen({ navigation }) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.container} 
+        showsVerticalScrollIndicator={false}
+        // --- 4. THÊM REFRESH CONTROL VÀO SCROLLVIEW ---
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={onRefresh} 
+            colors={[COLORS.primary]} // Android
+            tintColor={COLORS.primary} // iOS
+          />
+        }
+      >
         
-        {/* --- 1. PROFILE CARD & STATS --- */}
+        {/* PROFILE CARD & STATS */}
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
-            <Image 
-              source={{ uri: currentAvatar }} 
-              style={styles.avatar} 
-            />
+            <Image source={{ uri: currentAvatar }} style={styles.avatar} />
             {isAdmin && (
                <View style={[styles.editBadge, {backgroundColor: COLORS.admin}]}>
                  <Text style={{fontSize: 8, color: '#fff', fontWeight: 'bold'}}>ADMIN</Text>
@@ -150,7 +135,6 @@ export default function AccountScreen({ navigation }) {
           <Text style={styles.name}>{user?.displayName || "VibePlate Chef"}</Text>
           <Text style={styles.email}>{user?.email || "No Email"}</Text>
 
-          {/* KHU VỰC THỐNG KÊ */}
           <View style={styles.statsContainer}>
             <StatItem 
               number={favoriteCount} 
@@ -166,11 +150,8 @@ export default function AccountScreen({ navigation }) {
           </View>
         </View>
 
-        {/* --- 2. BANNER --- */}
-        <TouchableOpacity 
-          style={styles.bannerBtn} 
-          onPress={() => navigation.navigate('DishNomination')}
-        >
+        {/* BANNER ĐÓNG GÓP */}
+        <TouchableOpacity style={styles.bannerBtn} onPress={() => navigation.navigate('DishNomination')}>
           <View style={{flex: 1}}>
              <Text style={styles.bannerTitle}>Đóng góp công thức 👨‍🍳</Text>
              <Text style={styles.bannerSub}>Chia sẻ món ngon của bạn tới cộng đồng ngay!</Text>
@@ -180,15 +161,10 @@ export default function AccountScreen({ navigation }) {
           </View>
         </TouchableOpacity>
 
-        {/* --- 3. MENU TÀI KHOẢN & CÀI ĐẶT --- */}
+        {/* MENU OPTIONS */}
         <View style={styles.card}>
-           
-           {/* NÚT ADMIN (Chỉ hiện nếu là Admin) */}
            {isAdmin && (
-             <TouchableOpacity 
-                  style={styles.menuItem} 
-                  onPress={() => navigation.navigate('AdminDataManagement')} 
-             >
+             <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AdminDataManagement')}>
                 <View style={[styles.menuIcon, {backgroundColor: COLORS.adminBg}]}>
                    <Image 
                      source={{uri: 'https://cdn-icons-png.flaticon.com/512/2345/2345338.png'}} 
@@ -200,11 +176,7 @@ export default function AccountScreen({ navigation }) {
              </TouchableOpacity>
            )}
 
-           {/* Thông tin tài khoản */}
-           <TouchableOpacity 
-                style={styles.menuItem} 
-                onPress={() => navigation.navigate('InfoAccount')}
-           >
+           <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('InfoAccount')}>
               <View style={[styles.menuIcon, {backgroundColor: COLORS.primaryLight}]}>
                  <Image 
                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} 
@@ -215,11 +187,7 @@ export default function AccountScreen({ navigation }) {
               <Text style={styles.arrow}>›</Text>
            </TouchableOpacity>
            
-           {/* Cá nhân hóa (Nếu bạn có màn hình này) */}
-           <TouchableOpacity 
-                style={styles.menuItem} 
-                onPress={() => navigation.navigate('Personalization')} 
-           >
+           <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('Personalization')}>
               <View style={[styles.menuIcon, {backgroundColor: '#FFF4E5'}]}> 
                  <Image 
                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/2099/2099122.png'}} 
@@ -230,11 +198,7 @@ export default function AccountScreen({ navigation }) {
               <Text style={styles.arrow}>›</Text>
            </TouchableOpacity>
 
-           {/* Đăng xuất */}
-           <TouchableOpacity 
-                style={[styles.menuItem, {borderBottomWidth: 0}]} 
-                onPress={handleLogout}
-           >
+           <TouchableOpacity style={[styles.menuItem, {borderBottomWidth: 0}]} onPress={handleLogout}>
               <View style={[styles.menuIcon, {backgroundColor: COLORS.dangerBg}]}>
                  <Image 
                    source={{uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png'}} 
@@ -246,7 +210,6 @@ export default function AccountScreen({ navigation }) {
         </View>
 
         <Text style={styles.versionText}>VibePlate v1.0.3</Text>
-
       </ScrollView>
     </SafeAreaView>
   );

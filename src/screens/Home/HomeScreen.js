@@ -1,10 +1,11 @@
-import React, { useLayoutEffect, useState, useEffect } from "react";
+import React, { useLayoutEffect, useState, useEffect, useCallback } from "react";
 import { 
-  FlatList, View, ActivityIndicator, Text, TouchableOpacity, Modal, StyleSheet
+  FlatList, View, ActivityIndicator, Text, TouchableOpacity, Modal, StyleSheet,
+  RefreshControl 
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { getAllRecipes, getAllCategories } from "../../data/MockDataAPI";
-import { differenceInDays, startOfDay } from 'date-fns'; // Thêm startOfDay để chuẩn hóa
+import { differenceInDays, startOfDay } from 'date-fns'; 
 import { auth, db } from '../../firebase/firebaseConfig';
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -30,7 +31,7 @@ const timeFilters = {
   morning:   { keywords: ['bún', 'phở', 'mì', 'xôi', 'bánh mì', 'trứng'], label: "☀️ Gợi ý bữa sáng" },
   lunch:     { keywords: ['cơm', 'canh', 'kho', 'xào', 'chiên', 'mặn'], label: "🍚 Bữa trưa chắc bụng" },
   afternoon: { keywords: ['chè', 'bánh', 'sinh tố', 'trà', 'vặt'], label: "🍰 Bữa xế chiều" },
-  dinner:    { keywords: ['lẩu', 'nướng', 'canh', 'salad', 'nhẹ'], label: "🌙 Bữa tối quây quần" }
+  dinner:    { keywords: ['lẩu', 'nướng', 'canh', 'salad', 'nhẹ'], label: "🌙 Bữa tối quây quân" }
 };
 
 export default function HomeScreen(props) {
@@ -40,12 +41,11 @@ export default function HomeScreen(props) {
   const [masterCategories, setMasterCategories] = useState([]);
   const [bannerData, setBannerData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   const [user, setUser] = useState(null);
-  const [expiringItems, setExpiringItems] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
-
   const [randomSuggestions, setRandomSuggestions] = useState([]);
   const [suggestionModalVisible, setSuggestionModalVisible] = useState(false);
   const [mood, setMood] = useState('happy');
@@ -64,75 +64,83 @@ export default function HomeScreen(props) {
     });
   }, []);
 
-  // --- LOGIC 1: WEATHER & TIME ---
-  useEffect(() => {
-    const currentHour = new Date().getHours();
-    let session = "morning";
-    let greet = "Chào buổi sáng";
-    if (currentHour >= 5 && currentHour < 11) session = "morning";
-    else if (currentHour >= 11 && currentHour < 14) session = "lunch";
-    else if (currentHour >= 14 && currentHour < 18) session = "afternoon";
-    else { session = "dinner"; greet = "Chào buổi tối"; }
-    setTimeSession(session);
-    setGreeting(greet);
+  // --- HÀM LẤY THỜI TIẾT (CHẠY RIÊNG) ---
+  const fetchWeather = async () => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setWeatherData(prev => ({ ...prev, city: "Chưa cấp quyền vị trí" }));
+        return;
+      }
+      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      let address = await Location.reverseGeocodeAsync(location.coords);
+      let currentCity = address[0]?.city || address[0]?.subregion || "Việt Nam";
+      
+      const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${location.coords.latitude}&lon=${location.coords.longitude}&units=metric&lang=vi&appid=${WEATHER_API_KEY}`);
+      const data = await res.json();
+      if (data.main) setWeatherData({ temp: Math.round(data.main.temp), city: currentCity });
+    } catch (e) { 
+      console.log("Weather error:", e);
+      setWeatherData(prev => ({ ...prev, city: "Lỗi định vị" }));
+    }
+  };
 
-    (async () => {
-      try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        let location = await Location.getCurrentPositionAsync({});
-        let address = await Location.reverseGeocodeAsync(location.coords);
-        let currentCity = address[0]?.city || address[0]?.subregion || "Việt Nam";
-        const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${location.coords.latitude}&lon=${location.coords.longitude}&units=metric&lang=vi&appid=${WEATHER_API_KEY}`);
-        const data = await res.json();
-        if (data.main) setWeatherData({ temp: Math.round(data.main.temp), city: currentCity });
-      } catch (e) { console.log(e); }
-    })();
-  }, []);
+  // --- HÀM TẢI DỮ LIỆU CHÍNH (NHANH) ---
+  const fetchData = async () => {
+    try {
+      // 1. Logic thời gian cập nhật tức thì
+      const currentHour = new Date().getHours();
+      let session = "morning", greet = "Chào buổi sáng";
+      if (currentHour >= 4 && currentHour < 11) { session = "morning"; greet = "Chào buổi sáng"; }      
+      else if (currentHour >= 11 && currentHour < 14) { session = "lunch"; greet = "Chào buổi trưa"; }
+      else if (currentHour >= 14 && currentHour < 18) { session = "afternoon"; greet = "Chào buổi chiều"; }
+      else if (currentHour >= 18 || currentHour < 22) { session = "evening"; greet = "Chào buổi tối"; }      
+      else if (currentHour >= 22 || currentHour < 4) { session = "night"; greet = "Chào buổi tối"; }
+      setTimeSession(session);
+      setGreeting(greet);
 
-  // --- LOGIC 2: DATA ---
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [recipes, categories] = await Promise.all([getAllRecipes(), getAllCategories()]);
-        setMasterRecipes(recipes);
-        setMasterCategories(categories);
-        setBannerData([...recipes].sort(() => 0.5 - Math.random()).slice(0, 5));
-        setRandomSuggestions([...recipes].sort(() => 0.5 - Math.random()).slice(0, 3));
-      } catch (e) { console.error(e); } finally { setIsLoading(false); }
-    };
+      // 2. Chỉ ưu tiên lấy Recipes & Categories
+      const [recipes, categories] = await Promise.all([getAllRecipes(), getAllCategories()]);
+      setMasterRecipes(recipes);
+      setMasterCategories(categories);
+      setBannerData([...recipes].sort(() => 0.5 - Math.random()).slice(0, 5));
+      setRandomSuggestions([...recipes].sort(() => 0.5 - Math.random()).slice(0, 3));
+      
+      // 3. Gọi Weather chạy ngầm, không đợi nó
+      fetchWeather();
+      
+    } catch (e) {
+      console.error("Data error:", e);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  const onRefresh = useCallback(() => {
+    setIsRefreshing(true);
     fetchData();
   }, []);
 
-  // --- LOGIC 3: FIX CẢNH BÁO HẠN DÙNG ---
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // --- LOGIC AUTH & PANTRY (CHẠY NGẦM) ---
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // Kiểm tra đồ hết hạn
         const q = query(collection(db, "inventory"), where("email", "==", currentUser.email));
         const unsubscribePantry = onSnapshot(q, (snapshot) => {
           const today = startOfDay(new Date());
           const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
           const warningItems = items.filter(item => {
             if (!item.expiryDate) return false;
-            
-            let expDate;
-            // Handle Firebase Timestamp (.toDate()) hoặc String (new Date())
-            if (typeof item.expiryDate.toDate === 'function') {
-                expDate = startOfDay(item.expiryDate.toDate());
-            } else {
-                expDate = startOfDay(new Date(item.expiryDate));
-            }
-
-            const diff = differenceInDays(expDate, today);
-            return diff <= 3; 
+            let expDate = typeof item.expiryDate.toDate === 'function' ? item.expiryDate.toDate() : new Date(item.expiryDate);
+            return differenceInDays(startOfDay(expDate), today) <= 3; 
           });
-
-          // Chỉ hiện Popup nếu tìm thấy đồ và chưa hiện trong phiên này
           if (warningItems.length > 0 && !hasShownPopupSession) {
-            setExpiringItems(warningItems);
             setModalVisible(true);
             hasShownPopupSession = true; 
           }
@@ -143,9 +151,9 @@ export default function HomeScreen(props) {
     return () => unsubscribeAuth();
   }, []);
 
-  // --- LOGIC 4: FILTER ---
+  // --- LOGIC FILTER (CHẠY KHI DATA THAY ĐỔI) ---
   useEffect(() => {
-    if (isLoading || masterRecipes.length === 0) return;
+    if (masterRecipes.length === 0) return;
     let keywords = mood !== 'neutral' ? moodConfig[mood].keywords : [];
     if (!mood || mood === 'neutral') {
       keywords = timeFilters[timeSession].keywords;
@@ -163,7 +171,7 @@ export default function HomeScreen(props) {
       recipes: finalData.filter(r => r.categoryId === cat.id)
     })).filter(c => c.recipes.length > 0);
     setGroupedData(grouped);
-  }, [mood, timeSession, masterRecipes, masterCategories, isLoading]);
+  }, [mood, timeSession, masterRecipes, masterCategories]);
 
   const onPressRecipe = (item) => {
     setSuggestionModalVisible(false);
@@ -179,6 +187,9 @@ export default function HomeScreen(props) {
         keyExtractor={(item) => `${item.id}`}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => <CategorySection item={item} onPressRecipe={onPressRecipe} />}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#000']} tintColor={'#000'} />
+        }
         ListHeaderComponent={
           <View>
             <HeaderSection 

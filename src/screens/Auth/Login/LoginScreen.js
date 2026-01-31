@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, Alert, 
-  KeyboardAvoidingView, Platform, ActivityIndicator 
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, RefreshControl 
 } from 'react-native';
 import styles from './styles'; 
 
@@ -12,9 +12,10 @@ import {
   GoogleAuthProvider, 
   signInWithCredential, 
   signInWithPopup,
-  signOut,               // Import thêm
-  sendEmailVerification, // Import thêm
-  deleteUser             // Import thêm
+  signOut,
+  sendEmailVerification,
+  deleteUser,
+  reload 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -23,50 +24,73 @@ export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     GoogleSignin.configure({
-      // Thay bằng Web Client ID của bạn
       webClientId: '713850148752-4ebjj3mt0kctk2ishpu166mno66e2b18.apps.googleusercontent.com', 
       offlineAccess: true,
     });
   }, []);
 
-  // --- HÀM TẠO DỮ LIỆU USER (CẤU TRÚC CHUẨN) ---
+  // --- HÀM TẠO DỮ LIỆU USER ---
   const checkAndCreateUserData = async (user) => {
     try {
       const userDocId = user.email.toLowerCase(); 
       const userRef = doc(db, "users", userDocId);
       const docSnap = await getDoc(userRef);
 
-      // Chỉ tạo mới nếu chưa có dữ liệu
       if (!docSnap.exists()) {
         await setDoc(userRef, {          
           email: user.email,
-          displayName: user.displayName || "Người dùng mới",
+          displayName: user.displayName || "Thành viên mới",
           photo_url: user.photoURL || "https://i.pinimg.com/736x/93/0b/21/930b2170b904835c0331d82f0b4f7951.jpg",
-          
-          // --- Thêm các trường mới theo yêu cầu ---
           isVerified: true,  
           location: "",      
-          
           role: "user", 
           createdAt: Timestamp.now(),
         });
-        console.log("--> Đã tạo User mới thành công!");
-      } else {
-        console.log("--> User cũ đã có dữ liệu.");
       }
     } catch (error) {
-      console.error("Lỗi khi tạo user data:", error);
-      Alert.alert("Lỗi dữ liệu", "Không thể khởi tạo thông tin người dùng.");
+      console.error("Lỗi Firestore:", error);
     }
   };
 
-  // --- HÀM 1: ĐĂNG NHẬP THƯỜNG (CÓ CHECK EMAIL) ---
+  // --- HÀM RELOAD TRẠNG THÁI XÁC THỰC ---
+  const onRefresh = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setRefreshing(false);
+      return;
+    }
+
+    setRefreshing(true);
+    try {
+      await reload(user); 
+      if (user.emailVerified) {
+        await checkAndCreateUserData(user);
+        Alert.alert(
+          "Tuyệt vời!", 
+          "Email của bạn đã được xác thực thành công. Chào mừng bạn đến với VibePlate!",
+          [{ text: "Khám phá ngay" }]
+        );
+      } else {
+        Alert.alert(
+          "Thông báo", 
+          "Chúng mình vẫn chưa nhận được xác nhận. Bạn hãy kiểm tra kỹ hộp thư (bao gồm cả thư rác) nhé!"
+        );
+      }
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể làm mới trạng thái. Vui lòng thử lại sau.");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  // --- HÀM ĐĂNG NHẬP ---
   const handleLogin = async () => {
-    if (email === '' || password === '') {
-      Alert.alert('Thông báo', 'Vui lòng nhập email và mật khẩu');
+    if (!email.trim() || !password) {
+      Alert.alert('Nhắc nhở', 'Bạn vui lòng nhập đầy đủ Email và Mật khẩu nhé!');
       return;
     }
     setLoading(true);
@@ -75,98 +99,91 @@ export default function LoginScreen({ navigation }) {
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       const user = userCredential.user;
 
-      // 🔥 1. KIỂM TRA NGOẠI LỆ CHO ADMIN
       const isAdmin = user.email.toLowerCase() === "admin@vibeplate.com";
 
-      // 🔥 2. NẾU KHÔNG PHẢI ADMIN -> BẮT BUỘC CHECK XÁC THỰC
       if (!isAdmin) {
+          await reload(user); 
+
           if (!user.emailVerified) {
               const creationTime = new Date(user.metadata.creationTime).getTime();
               const now = Date.now();
-              const oneDayMs = 24 * 60 * 60 * 1000; // 24 giờ
+              const oneDayMs = 24 * 60 * 60 * 1000;
 
-              // A. Nếu quá 24h -> XÓA LUÔN
               if (now - creationTime > oneDayMs) {
                   try {
                       await deleteUser(user);
-                      Alert.alert("Hết hạn", "Tài khoản tạo quá 24h chưa xác thực đã bị xóa. Vui lòng đăng ký lại.");
+                      Alert.alert(
+                        "Tài khoản hết hạn", 
+                        "Vì bạn chưa xác thực email trong vòng 24h qua, tài khoản này đã được gỡ bỏ để bảo mật. Bạn hãy đăng ký lại nhé!"
+                      );
                   } catch (err) {
-                      await signOut(auth); // Lỗi xóa thì cứ logout ra
+                      await signOut(auth);
                   }
                   setLoading(false);
-                  return; // ⛔️ DỪNG LẠI
+                  return;
               }
 
-              // B. Nếu chưa quá 24h -> NHẮC NHỞ
               Alert.alert(
-                  "Chưa xác thực", 
-                  "Vui lòng kiểm tra email để kích hoạt tài khoản.",
+                  "Xác nhận Email", 
+                  "Bạn cần xác thực email trước khi đăng nhập. \n\nSau khi bấm vào link trong thư, hãy quay lại đây và 'Vuốt xuống' để làm mới nhé!",
                   [
                       { 
                           text: "Gửi lại Email", 
-                          onPress: () => sendEmailVerification(user).then(() => signOut(auth)) 
+                          onPress: () => {
+                            sendEmailVerification(user);
+                            Alert.alert("Đã gửi!", "Link xác nhận mới đã được gửi đi.");
+                            signOut(auth);
+                          }
                       },
-                      { text: "Đóng", onPress: () => signOut(auth) }
+                      { text: "Để sau", style: "cancel", onPress: () => signOut(auth) }
                   ]
               );
               setLoading(false);
-              return; // ⛔️ DỪNG LẠI
+              return;
           }
       }
 
-      // 🔥 3. NẾU ĐÃ XÁC THỰC (HOẶC LÀ ADMIN) -> TẠO DATA VÀ CHO VÀO
       await checkAndCreateUserData(user);
-      console.log("Đăng nhập thường thành công");
       
     } catch (error) {
-      let msg = error.message;
-      if(error.code === 'auth/invalid-credential') msg = "Sai email hoặc mật khẩu!";
-      Alert.alert('Lỗi đăng nhập', msg);
+      console.log(error.code);
+      let title = "Đăng nhập thất bại";
+      let msg = "Đã có lỗi xảy ra, vui lòng thử lại sau.";
+
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        msg = "Email hoặc mật khẩu không chính xác. Bạn kiểm tra lại nhé!";
+      } else if (error.code === 'auth/too-many-requests') {
+        msg = "Bạn đã nhập sai quá nhiều lần. Vui lòng đợi một lát rồi thử lại.";
+      } else if (error.code === 'auth/invalid-email') {
+        msg = "Định dạng email không hợp lệ.";
+      }
+
+      Alert.alert(title, msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- HÀM 2: ĐĂNG NHẬP GOOGLE ---
+  // --- HÀM ĐĂNG NHẬP GOOGLE ---
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      // A. CHẠY TRÊN WEB
       if (Platform.OS === 'web') {
         const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' }); 
         const result = await signInWithPopup(auth, provider);
-        await checkAndCreateUserData(result.user); // Web cũng phải tạo data
-      } 
-      
-      // B. CHẠY TRÊN MOBILE (Android/iOS)
-      else {
+        await checkAndCreateUserData(result.user);
+      } else {
         await GoogleSignin.hasPlayServices();
-        
-        try {
-          await GoogleSignin.signOut();
-        } catch (error) {
-          // Bỏ qua lỗi nếu chưa đăng nhập trước đó
-        }
-
+        await GoogleSignin.signOut().catch(() => {});
         const userInfo = await GoogleSignin.signIn();
         const idToken = userInfo.data?.idToken || userInfo.idToken; 
-        
-        if (!idToken) throw new Error('Không tìm thấy Google ID Token');
-
         const googleCredential = GoogleAuthProvider.credential(idToken);
         const userCredential = await signInWithCredential(auth, googleCredential);
-        
-        // Gọi hàm tạo data rút gọn
         await checkAndCreateUserData(userCredential.user);
-        
-        console.log("Đăng nhập Google thành công");
       }
-
     } catch (error) {
-      console.log(error);
       if (error.code !== 'RNGoogleSignin:SIGN_IN_CANCELLED') {
-        Alert.alert("Lỗi Google Login", error.message);
+        Alert.alert("Thông báo", "Vui lòng chọn tài khoản Google để tiếp tục đăng nhập.");
       }
     } finally {
       setLoading(false);
@@ -176,48 +193,70 @@ export default function LoginScreen({ navigation }) {
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === "ios" ? "padding" : "height"} 
-      style={styles.container}
+      style={{flex: 1, backgroundColor: '#fff'}}
     >
-      <Text style={styles.title}>VibePlate</Text>
-      <Text style={styles.subtitle}>Đăng nhập để tiếp tục</Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Mật khẩu"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-
-      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff"/> : <Text style={styles.buttonText}>ĐĂNG NHẬP</Text>}
-      </TouchableOpacity>
-
-      <Text style={{textAlign: 'center', marginVertical: 15, color: '#999'}}>HOẶC</Text>
-
-      <TouchableOpacity 
-        style={[styles.button, styles.googleButton]} 
-        onPress={handleGoogleLogin}
-        disabled={loading}
+      <ScrollView 
+        contentContainerStyle={[styles.container, {flexGrow: 1, justifyContent: 'center'}]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            title="Đang kiểm tra trạng thái xác thực..."
+            tintColor="#000"
+          />
+        }
       >
-        <Text style={styles.buttonText}>G    Tiếp tục với Google</Text>
-      </TouchableOpacity>
+        <Text style={styles.title}>VibePlate</Text>
+        <Text style={styles.subtitle}>Chào mừng bạn quay trở lại!</Text>
 
-      <TouchableOpacity 
-        style={styles.linkContainer} 
-        onPress={() => navigation.navigate('Register')}
-      >
-        <Text style={{color: '#666'}}>
-          Chưa có tài khoản? <Text style={styles.linkText}>Đăng ký ngay</Text>
-        </Text>
-      </TouchableOpacity>
+        <TextInput
+          style={styles.input}
+          placeholder="Email của bạn"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Mật khẩu"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+
+        <TouchableOpacity 
+          style={[styles.button, loading && { opacity: 0.8 }]} 
+          onPress={handleLogin} 
+          disabled={loading}
+        >
+          {loading ? <ActivityIndicator color="#fff"/> : <Text style={styles.buttonText}>ĐĂNG NHẬP</Text>}
+        </TouchableOpacity>
+
+        <View style={{flexDirection: 'row', alignItems: 'center', marginVertical: 20}}>
+          <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+          <Text style={{marginHorizontal: 10, color: '#999', fontSize: 12}}>HOẶC</Text>
+          <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.button, styles.googleButton]} 
+          onPress={handleGoogleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText}>Tiếp tục với Google</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.linkContainer} 
+          onPress={() => navigation.navigate('Register')}
+        >
+          <Text style={{color: '#666'}}>
+            Mới biết đến VibePlate? <Text style={styles.linkText}>Đăng ký ngay</Text>
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

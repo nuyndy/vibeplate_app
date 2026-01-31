@@ -1,28 +1,34 @@
-import React, { useEffect, useState, useLayoutEffect } from 'react';
-import { View, Text, FlatList, Image, ActivityIndicator, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useEffect, useState, useLayoutEffect, useCallback } from 'react';
+import { 
+  View, Text, FlatList, Image, ActivityIndicator, StyleSheet, 
+  TouchableOpacity, Dimensions, RefreshControl 
+} from 'react-native';
 import { auth, db } from '../../firebase/firebaseConfig';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
 export default function SavedDishesScreen({ navigation }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // State cho tính năng reload
   const user = auth.currentUser;
 
+  // --- CONFIG HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Món đã lưu',
       headerTitleStyle: {
         fontWeight: "bold",
         fontSize: 20,
-        color: 'black', // Tiêu đề đen
+        color: 'black',
       },
-      headerTintColor: 'black', // Nút back (nếu có) màu đen
-      headerTransparent: true, // Giữ header trong suốt
+      headerTintColor: 'black',
+      headerTransparent: true,
     });
-  }, []);
+  }, [navigation]);
 
+  // --- LISTEN DATA (REALTIME) ---
   useEffect(() => {
     if (!user) {
         setLoading(false);
@@ -42,11 +48,33 @@ export default function SavedDishesScreen({ navigation }) {
       setData(list);
       setLoading(false);
     }, (error) => {
-        console.error("Lỗi:", error);
+        console.error("Lỗi Realtime:", error);
         setLoading(false);
     });
 
     return () => unsubscribe();
+  }, [user]);
+
+  // --- HÀM XỬ LÝ RELOAD (PULL TO REFRESH) ---
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Gọi trực tiếp getDocs để làm mới dữ liệu từ server
+      const q = query(
+        collection(db, "favorites"), 
+        where("email", "==", user.email)
+      );
+      const snapshot = await getDocs(q);
+      const list = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+      setData(list);
+    } catch (error) {
+      console.error("Lỗi khi reload:", error);
+    } finally {
+      setRefreshing(false);
+    }
   }, [user]);
 
   const onPressRecipe = (item) => {
@@ -56,21 +84,8 @@ export default function SavedDishesScreen({ navigation }) {
   if (loading) {
       return (
         <View style={styles.loadingContainer}>
-            {/* Loading màu Đen */}
             <ActivityIndicator size="large" color="#000000" />
         </View>
-      );
-  }
-
-  if (data.length === 0) {
-      return (
-          <View style={styles.emptyContainer}>
-              <Image 
-                source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4076/4076432.png' }} 
-                style={styles.emptyIcon} 
-              />
-              <Text style={styles.emptyText}>Chưa có món nào được lưu.</Text>
-          </View>
       );
   }
 
@@ -79,8 +94,16 @@ export default function SavedDishesScreen({ navigation }) {
       <FlatList
         data={data}
         keyExtractor={item => item.id}
-        // 🔥 QUAN TRỌNG: paddingTop: 120 để cách Header ra
         contentContainerStyle={styles.listContainer}
+        // --- TÍCH HỢP REFRESH CONTROL ---
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#000000']} // Android
+            tintColor={'#000000'} // iOS
+          />
+        }
         renderItem={({ item }) => (
           <TouchableOpacity 
             style={styles.card} 
@@ -97,20 +120,28 @@ export default function SavedDishesScreen({ navigation }) {
               </View>
 
               <View style={styles.row}>
-                   {/* Style đen trắng tối giản */}
                    <Text style={styles.categoryText}>
                        {item.servings ? `${item.servings} người` : 'Món ngon'}
                    </Text>
               </View>
             </View>
             
-            {/* Trái tim màu Đen */}
             <Image 
                 source={{ uri: 'https://cdn-icons-png.flaticon.com/512/833/833472.png' }} 
                 style={styles.heartIcon} 
             />
           </TouchableOpacity>
         )}
+        // --- HIỂN THỊ KHI TRỐNG ---
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Image 
+              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4076/4076432.png' }} 
+              style={styles.emptyIcon} 
+            />
+            <Text style={styles.emptyText}>Chưa có món nào được lưu.</Text>
+          </View>
+        }
       />
     </View>
   );
@@ -119,7 +150,7 @@ export default function SavedDishesScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
       flex: 1,
-      backgroundColor: '#FFFFFF', // Nền trắng tuyệt đối
+      backgroundColor: '#FFFFFF',
   },
   loadingContainer: {
       flex: 1,
@@ -128,27 +159,27 @@ const styles = StyleSheet.create({
       backgroundColor: '#FFFFFF'
   },
   listContainer: {
-      paddingTop: 80, 
+      paddingTop: 80,
       paddingBottom: 20,
-      paddingHorizontal: 15
+      paddingHorizontal: 15,
+      minHeight: Dimensions.get('window').height, // Để có thể kéo refresh khi list trống
   },
   emptyContainer: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: '#FFFFFF',
-      marginTop: 50
+      marginTop: 100
   },
   emptyIcon: {
       width: 80, 
       height: 80, 
       tintColor: '#000000',
       marginBottom: 20,
-      opacity: 0.5
+      opacity: 0.3
   },
   emptyText: {
       fontSize: 16,
-      color: '#000000',
+      color: '#888888',
       fontWeight: '500'
   },
   card: { 
@@ -159,7 +190,13 @@ const styles = StyleSheet.create({
       padding: 10,
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: '#E0E0E0', 
+      borderColor: '#F0F0F0', 
+      // Thêm shadow nhẹ cho card
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
   },
   image: { 
       width: 70, 

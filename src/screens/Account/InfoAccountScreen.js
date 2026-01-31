@@ -1,6 +1,7 @@
-import React, { useLayoutEffect, useState, useEffect } from 'react';
+import React, { useLayoutEffect, useState, useEffect, useCallback } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, TextInput, ScrollView, Alert, ActivityIndicator 
+  View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, 
+  TextInput, ScrollView, Alert, ActivityIndicator, RefreshControl 
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -9,7 +10,6 @@ import { auth, db } from '../../firebase/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 
-// --- CẤU HÌNH CLOUDINARY (Giữ nguyên) ---
 const CLOUD_NAME = "devpumtqu";
 const UPLOAD_PRESET = "VibePlate";
 const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
@@ -32,43 +32,47 @@ export default function InfoAccount({ navigation }) {
   const [location, setLocation] = useState('');
   const [avatar, setAvatar] = useState(null); 
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // State cho reload
 
-  // --- 1. LẤY DỮ LIỆU (LOGIC ƯU TIÊN FIRESTORE photo_url) ---
-  useEffect(() => {
-    const fetchData = async () => {
-      if (user) {
-        // 1. Set tạm dữ liệu từ Auth trước để giao diện ko bị trống
-        setName(user.displayName || '');
-        setEmail(user.email || '');
-        // Mặc định lấy từ Auth (photoURL), nếu chưa có thì lấy ảnh placeholder
-        let currentAvatar = user.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png';
-        setAvatar(currentAvatar);
+  // --- HÀM LẤY DỮ LIỆU (Tách riêng để dùng chung cho useEffect và onRefresh) ---
+  const fetchUserData = async () => {
+    if (!user) return;
+    try {
+      // 1. Set dữ liệu từ Auth trước
+      setName(user.displayName || '');
+      setEmail(user.email || '');
+      let currentAvatar = user.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png';
+      setAvatar(currentAvatar);
 
-        // 2. Gọi Firestore để lấy dữ liệu chuẩn (bao gồm photo_url do bạn tự định nghĩa)
-        try {
-          const docRef = doc(db, "users", user.email.toLowerCase());
-          const docSnap = await getDoc(docRef);
-          
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            
-            // Lấy location
-            if (data.location) setLocation(data.location);
-            
-            // QUAN TRỌNG: Nếu trong database có trường 'photo_url', dùng nó đè lên ảnh hiển thị
-            if (data.photo_url) {
-                setAvatar(data.photo_url);
-            }
-          }
-        } catch (error) {
-          console.log("Lỗi tải dữ liệu user:", error);
-        }
+      // 2. Lấy dữ liệu chi tiết từ Firestore
+      const docRef = doc(db, "users", user.email.toLowerCase());
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.location) setLocation(data.location);
+        if (data.photo_url) setAvatar(data.photo_url);
+        if (data.displayName) setName(data.displayName);
       }
-    };
-    fetchData();
+    } catch (error) {
+      console.log("Lỗi tải dữ liệu user:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserData();
   }, [user]);
 
-  // --- CONFIG HEADER (Giữ nguyên) ---
+  // --- XỬ LÝ RELOAD ---
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    // Reload lại Firebase Auth Profile để đảm bảo dữ liệu mới nhất
+    await user.reload(); 
+    await fetchUserData();
+    setRefreshing(false);
+  }, []);
+
+  // --- CONFIG HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTransparent: true,
@@ -85,7 +89,6 @@ export default function InfoAccount({ navigation }) {
     });
   }, [navigation]);
 
-  // --- 2. HÀM CHỌN ẢNH (Giữ nguyên) ---
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
@@ -103,7 +106,6 @@ export default function InfoAccount({ navigation }) {
     }
   };
 
-  // --- 3. UPLOAD CLOUDINARY (Giữ nguyên) ---
   const uploadToCloudinary = async (imageUri) => {
     const data = new FormData();
     const filename = imageUri.split('/').pop();
@@ -128,55 +130,40 @@ export default function InfoAccount({ navigation }) {
     }
   };
 
-  // --- 4. HÀM LƯU (Đã sửa để lưu trường photo_url) ---
   const handleSave = async () => {
     if (!user) return;
     setLoading(true);
 
     try {
-      // Biến lưu link ảnh cuối cùng
       let finalPhotoUrl = avatar; 
 
-      // Nếu ảnh là file local -> Upload lấy link mới
       if (avatar && avatar.startsWith('file://')) {
-         finalPhotoUrl = await uploadToCloudinary(avatar);
-      } else if (avatar && avatar.startsWith('http')) {
-         // Nếu avatar là link cũ (http) thì giữ nguyên
-         finalPhotoUrl = avatar;
+          finalPhotoUrl = await uploadToCloudinary(avatar);
       }
 
-      // A. Cập nhật Auth (Bắt buộc phải dùng key 'photoURL')
-      // Mục đích: Để các hàm mặc định của Firebase vẫn hoạt động tốt
       await updateProfile(user, {
         displayName: name,
         photoURL: finalPhotoUrl 
       });
 
-      // B. Cập nhật Firestore (Dùng key 'photo_url' theo ý bạn)
       const userRef = doc(db, "users", user.email.toLowerCase());
-      
       await updateDoc(userRef, {
         displayName: name,
-        photo_url: finalPhotoUrl, // <--- Đã sửa thành photo_url
+        photo_url: finalPhotoUrl,
         location: location
       });
 
-      // Cập nhật lại state để chắc chắn hiển thị đúng
       setAvatar(finalPhotoUrl);
-
       Alert.alert("Thành công", "Thông tin đã được cập nhật!", [
         { text: "OK", onPress: () => navigation.goBack() }
       ]);
-
     } catch (error) {
-      console.log(error);
       Alert.alert("Lỗi", "Không thể cập nhật: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // ... (Phần InputField và Styles giữ nguyên như cũ) ...
   const InputField = ({ label, value, onChange, icon, editable = true }) => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>{label}</Text>
@@ -195,15 +182,23 @@ export default function InfoAccount({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
         
         {/* AVATAR */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
-             <Image 
-               source={{ uri: avatar }} 
-               style={styles.avatar} 
-             />
+             <Image source={{ uri: avatar }} style={styles.avatar} />
              <TouchableOpacity style={styles.cameraIcon} onPress={pickImage}>
                <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/685/685655.png'}} style={{width: 16, height: 16, tintColor: '#fff'}} />
              </TouchableOpacity>

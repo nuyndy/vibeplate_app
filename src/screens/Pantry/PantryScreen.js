@@ -1,8 +1,9 @@
-import React, { useLayoutEffect, useState, useEffect, useRef } from "react";
+import React, { useLayoutEffect, useState, useEffect, useRef, useCallback } from "react";
 import { 
   FlatList, Text, View, ActivityIndicator, Modal, TextInput, 
   Alert, TouchableOpacity, StatusBar, Image, Animated, 
-  KeyboardAvoidingView, Platform, Button 
+  KeyboardAvoidingView, Platform, Button,
+  RefreshControl // 1. Thêm RefreshControl
 } from "react-native";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,21 +14,22 @@ import { differenceInDays, parseISO, format } from 'date-fns';
 import { db, auth } from '../../firebase/firebaseConfig'; 
 import { 
   collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, query, where, Timestamp 
+  onSnapshot, query, where, Timestamp, getDocs 
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+
+import styles, { ITEM_WIDTH, SPACING, SCREEN_WIDTH } from './styles';
 
 // --- CẤU HÌNH CLOUDINARY ---
 const CLOUD_NAME = "devpumtqu";
 const UPLOAD_PRESET = "VibePlate";
 const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
-import styles, { ITEM_WIDTH, SPACING, SCREEN_WIDTH } from './styles';
-
 export default function PantryScreen(props) {
   const { navigation } = props;
   const [pantryData, setPantryData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // 2. Thêm state refreshing
   const [user, setUser] = useState(null);
 
   // STATE FORM
@@ -43,10 +45,8 @@ export default function PantryScreen(props) {
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
   
-  // --- QUYỀN CAMERA ---
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef(null);
-  
   const scrollX = useRef(new Animated.Value(0)).current;
 
   useLayoutEffect(() => {
@@ -57,7 +57,28 @@ export default function PantryScreen(props) {
     });
   }, []);
 
-  // --- 1. LẤY DỮ LIỆU TỪ FIRESTORE ---
+  // --- HÀM LOAD DỮ LIỆU TÁCH RIÊNG ĐỂ REUSE ---
+  const fetchPantryData = async (currentUser) => {
+    if (!currentUser) return;
+    try {
+      const q = query(collection(db, "inventory"), where("email", "==", currentUser.email));
+      const snapshot = await getDocs(q);
+      const items = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          expiryDateObj: data.expiryDate ? data.expiryDate.toDate() : new Date(), 
+        };
+      });
+      items.sort((a, b) => a.expiryDateObj - b.expiryDateObj);
+      setPantryData(items);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    }
+  };
+
+  // --- 1. LẤY DỮ LIỆU TỪ FIRESTORE (REALTIME) ---
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
@@ -86,32 +107,33 @@ export default function PantryScreen(props) {
     return () => unsubscribeAuth();
   }, []);
 
-  // --- 2. CÁC HÀM HỖ TRỢ ---
+  // --- 3. LOGIC RELOAD ---
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (user) {
+      await fetchPantryData(user);
+    }
+    setRefreshing(false);
+  }, [user]);
+
+  // --- 2. CÁC HÀM HỖ TRỢ CLOUDINARY ---
   const uploadToCloudinary = async (imageUri) => {
     if (!imageUri) return null;
     if (imageUri.startsWith('http') && !imageUri.startsWith('file')) return imageUri;
-
     try {
       const data = new FormData();
       data.append('file', { uri: imageUri, type: 'image/jpeg', name: 'upload.jpg' });
       data.append('upload_preset', UPLOAD_PRESET);
       data.append('cloud_name', CLOUD_NAME);
-
       const response = await fetch(CLOUDINARY_URL, {
         method: 'POST',
         body: data,
         headers: { 'Accept': 'application/json', 'Content-Type': 'multipart/form-data' },
       });
-
       const result = await response.json();
-      if (result.secure_url) return result.secure_url;
-      else {
-        Alert.alert("Lỗi Upload", "Không thể lưu ảnh lên Cloudinary.");
-        return null;
-      }
+      return result.secure_url || null;
     } catch (error) {
       console.error("Upload failed:", error);
-      Alert.alert("Lỗi mạng", "Kiểm tra kết nối internet.");
       return null;
     }
   };
@@ -123,7 +145,6 @@ export default function PantryScreen(props) {
     return { color: '#00C851', bg: '#E8F5E9', label: 'TƯƠI', glow: '#00C851' }; 
   };
 
-  // --- 3. CRUD LOGIC ---
   const handleDeleteItem = (id) => {
     Alert.alert("Xóa thực phẩm", "Bạn chắc chắn muốn xóa món này?", [
         { text: "Hủy", style: "cancel" },
@@ -148,17 +169,13 @@ export default function PantryScreen(props) {
     setIsLoading(true); 
     try {
       let finalPhotoUrl = editingItem?.photo_url || 'https://via.placeholder.com/150';
-      
-      // Upload ảnh nếu có ảnh mới
       if (capturedPhoto && capturedPhoto !== editingItem?.photo_url) {
          const uploadedUrl = await uploadToCloudinary(capturedPhoto);
          if (uploadedUrl) finalPhotoUrl = uploadedUrl;
       }
-
       const days = parseInt(shelfLife);
       const today = new Date();
       const expiryDateObj = new Date(today.setDate(today.getDate() + days));
-
       const itemData = {
         email: user ? user.email : "unknown",
         name: newItemName,
@@ -167,13 +184,11 @@ export default function PantryScreen(props) {
         expiryDate: Timestamp.fromDate(expiryDateObj), 
         photo_url: finalPhotoUrl
       };
-
       if (editingItem) {
         await updateDoc(doc(db, "inventory", editingItem.id), itemData);
       } else {
         await addDoc(collection(db, "inventory"), itemData);
       }
-      
       resetForm();
     } catch (e) {
       Alert.alert("Lỗi", "Không thể lưu: " + e.message);
@@ -187,13 +202,12 @@ export default function PantryScreen(props) {
     setEditingItem(null); setCapturedPhoto(null); setIsTakingPhoto(false); setModalVisible(false); 
   };
   
-  // --- 4. CAMERA LOGIC (ĐÃ SỬA LỖI) ---
   const startCamera = async () => { 
     if (!permission) return;
     if (!permission.granted) {
       const result = await requestPermission();
       if (!result.granted) {
-        Alert.alert("Cần quyền Camera", "Vui lòng vào Cài đặt > Quyền riêng tư để bật Camera.");
+        Alert.alert("Cần quyền Camera", "Vui lòng vào Cài đặt để bật Camera.");
         return;
       }
     }
@@ -204,20 +218,12 @@ export default function PantryScreen(props) {
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
-        // Option an toàn nhất, bỏ skipProcessing
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.5, 
-          base64: false,
-          // skipProcessing: true, // <-- BỎ DÒNG NÀY VÌ GÂY LỖI TRÊN 1 SỐ MÁY
-        });
-        
-        console.log("Ảnh chụp thành công:", photo.uri);
+        const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, base64: false });
         setCapturedPhoto(photo.uri);
         setIsTakingPhoto(false);
         setModalVisible(true);
       } catch (error) {
-        console.error("Camera Error:", error);
-        Alert.alert("Lỗi Camera", "Không thể chụp: " + error.message);
+        Alert.alert("Lỗi Camera", "Không thể chụp ảnh.");
       }
     }
   };
@@ -273,26 +279,13 @@ export default function PantryScreen(props) {
     );
   };
 
-  // --- GIAO DIỆN CAMERA ---
   if (isTakingPhoto) {
-    if (!permission) return <View style={{flex:1, backgroundColor:'#000'}} />;
-    if (!permission.granted) {
-      return (
-        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: 'white', marginBottom: 20 }}>Cần quyền camera để tiếp tục</Text>
-          <Button onPress={requestPermission} title="Cấp quyền" />
-          <Button onPress={() => setIsTakingPhoto(false)} title="Hủy" color="red" />
-        </View>
-      );
-    }
-    
+    if (!permission || !permission.granted) return <View style={{flex:1, backgroundColor:'#000'}} />;
     const squareSize = SCREEN_WIDTH * 0.85;
     return (
       <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        
+        <StatusBar barStyle="light-content" translucent />
         <View style={{ width: squareSize, height: squareSize, borderRadius: 24, overflow: 'hidden', borderWidth: 3, borderColor: '#fff' }}>
-          {/* QUAN TRỌNG: mode="picture" và onCameraReady */}
           <CameraView 
             style={{ flex: 1 }} 
             facing="back" 
@@ -301,20 +294,12 @@ export default function PantryScreen(props) {
             onCameraReady={() => setIsCameraReady(true)}
           />
         </View>
-        
         <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%', paddingHorizontal: 30, marginTop: 50 }}>
-          <TouchableOpacity 
-            style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' }}
-            onPress={() => setIsTakingPhoto(false)} activeOpacity={0.7}
-          >
+          <TouchableOpacity style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' }} onPress={() => setIsTakingPhoto(false)}>
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: 'rgba(255,255,255,0.5)' }}
-            onPress={takePicture} activeOpacity={0.8}
-          >
-            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' }} />
+          <TouchableOpacity style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }} onPress={takePicture}>
+            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000' }} />
           </TouchableOpacity>
           <View style={{ width: 50 }} />
         </View>
@@ -322,15 +307,24 @@ export default function PantryScreen(props) {
     );
   }
 
-  // --- MAIN UI ---
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      {isLoading ? <ActivityIndicator size="large" color="#333" style={{marginTop: 100}} /> : (
+      {isLoading && !refreshing ? <ActivityIndicator size="large" color="#333" style={{marginTop: 100}} /> : (
         <Animated.FlatList
             data={pantryData} 
             horizontal 
             showsHorizontalScrollIndicator={false}
+            // 4. Tích hợp RefreshControl
+            refreshControl={
+              <RefreshControl 
+                refreshing={refreshing} 
+                onRefresh={onRefresh} 
+                tintColor="#333" // Cho iOS
+                colors={["#333"]} // Cho Android
+                progressViewOffset={80} // Đẩy icon quay xuống dưới header
+              />
+            }
             contentContainerStyle={{ 
                 paddingHorizontal: SPACING, 
                 paddingTop: 80, 
@@ -340,21 +334,13 @@ export default function PantryScreen(props) {
             }}
             snapToInterval={ITEM_WIDTH} 
             decelerationRate="fast" 
-            bounces={false}
+            bounces={true} // Bật bounces để có thể kéo reload
             keyExtractor={item => item.id}
             onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
             renderItem={renderItem}
-            getItemLayout={(data, index) => (
-              { length: ITEM_WIDTH, offset: ITEM_WIDTH * index, index }
-            )}
+            getItemLayout={(data, index) => ({ length: ITEM_WIDTH, offset: ITEM_WIDTH * index, index })}
             ListEmptyComponent={
-              <View style={{ 
-                  width: SCREEN_WIDTH, 
-                  marginLeft: -SPACING,
-                  justifyContent: 'center', 
-                  alignItems: 'center',
-                  height: '100%' 
-              }}>
+              <View style={{ width: SCREEN_WIDTH, marginLeft: -SPACING, justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                 <Text style={{ color: '#999', fontSize: 16 }}>Tủ trống, thêm món mới nhé!</Text>
               </View>
             }
@@ -362,42 +348,28 @@ export default function PantryScreen(props) {
       )}
       
       <TouchableOpacity style={styles.fab} onPress={startCamera} activeOpacity={0.8}>
-        <Image 
-          source={require('../../../assets/icons/camera.png')} 
-          style={{ width: 28, height: 28, tintColor: '#fff' }}
-          resizeMode="contain"
-        />
+        <Image source={require('../../../assets/icons/camera.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} resizeMode="contain" />
       </TouchableOpacity>
       
       <Modal transparent visible={modalVisible} animationType="fade">
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBody}>
-                <Text style={{fontSize:20, fontWeight:'bold', marginBottom:15}}>
-                  {editingItem ? "Chỉnh sửa món" : "Thêm món mới"}
-                </Text>
-                
+                <Text style={{fontSize:20, fontWeight:'bold', marginBottom:15}}>{editingItem ? "Chỉnh sửa món" : "Thêm món mới"}</Text>
                 {capturedPhoto && (
                   <View style={{ width: '100%', marginBottom: 15 }}>
                     <Image source={{ uri: capturedPhoto }} style={{ width: '100%', height: 150, borderRadius: 12 }} resizeMode="cover" />
-                    <TouchableOpacity 
-                      style={{ position: 'absolute', bottom: 8, right: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.2, shadowRadius: 3, elevation: 3 }}
-                      onPress={() => { setCapturedPhoto(null); setModalVisible(false); startCamera(); }}
-                    >
+                    <TouchableOpacity style={{ position: 'absolute', bottom: 8, right: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 }} onPress={() => { setCapturedPhoto(null); setModalVisible(false); startCamera(); }}>
                       <Ionicons name="camera" size={16} color="#007AFF" />
                       <Text style={{ color: '#007AFF', marginLeft: 5, fontWeight: '600' }}>Chụp lại</Text>
                     </TouchableOpacity>
                   </View>
                 )}
-                
                 <TextInput style={styles.input} placeholder="Tên thực phẩm..." value={newItemName} onChangeText={setNewItemName}/>
-                
                 <View style={{flexDirection: 'row', gap: 10}}>
                    <TextInput style={[styles.input, {flex: 1}]} placeholder="Số lượng..." keyboardType="numeric" value={quantity} onChangeText={setQuantity}/>
                    <TextInput style={[styles.input, {flex: 1}]} placeholder="Đơn vị (hộp, kg...)" value={unit} onChangeText={setUnit}/>
                 </View>
-                
                 <TextInput style={styles.input} placeholder="Dùng trong bao nhiêu ngày?" keyboardType="numeric" value={shelfLife} onChangeText={setShelfLife}/>
-                
                 <View style={{flexDirection:'row', gap:10, marginTop:10, width:'100%'}}>
                     <TouchableOpacity style={styles.btnCancel} onPress={resetForm}><Text>Hủy</Text></TouchableOpacity>
                     <TouchableOpacity style={styles.btnSave} onPress={handleSaveItem}>
