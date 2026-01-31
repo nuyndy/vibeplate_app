@@ -75,8 +75,12 @@ export default function NotificationScreen(props) {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={{paddingBottom: 20}}>
+      <RecipeNotification navigation={navigation} />
       {hasExpiredItems ? (
+
+        
+        // --- TRƯỜNG HỢP CÓ ĐỒ HẾT HẠN/QUÁ HẠN ---
         <TouchableOpacity 
             style={styles.notificationCard}
             onPress={() => navigation.navigate('Pantry')}
@@ -99,7 +103,7 @@ export default function NotificationScreen(props) {
             <Text style={styles.emptySubText}>Tất cả nguyên liệu trong kho vẫn còn tươi ngon.</Text>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 

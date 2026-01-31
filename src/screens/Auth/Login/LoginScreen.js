@@ -47,8 +47,8 @@ export default function LoginScreen({ navigation }) {
           photo_url: user.photoURL || "https://i.pinimg.com/736x/93/0b/21/930b2170b904835c0331d82f0b4f7951.jpg",
           
           // --- Thêm các trường mới theo yêu cầu ---
-          isVerified: true,  // Đã vào đến đây là coi như đã xác thực
-          location: "",      // Để trống chờ cập nhật sau
+          isVerified: true,  
+          location: "",      
           
           role: "user", 
           createdAt: Timestamp.now(),
