@@ -48,6 +48,8 @@ export const styles = StyleSheet.create({
   // 2. CARD & BOX (KHUNG)
   // =========================
   card: {
+    flexDirection: 'row',       // <--- QUAN TRỌNG: Xếp ngang
+    alignItems: 'center',
     backgroundColor: '#fff',
     padding: 15,
     borderRadius: 12,
@@ -236,8 +238,8 @@ export const styles = StyleSheet.create({
 
   // Feedback Box (Admin)
   feedbackBox: {
-    marginTop: 20, backgroundColor: '#FFF3E0', padding: 15, 
-    borderRadius: 10, borderWidth: 1, borderColor: '#FFCC80'
+    marginTop: 20, backgroundColor: '#f0f0f0', padding: 15, 
+    borderRadius: 10, borderWidth: 1, borderColor: '#ffffff'
   },
   inputFeedback: {
     backgroundColor: '#fff', borderRadius: 8, padding: 10, height: 80, 

@@ -9,7 +9,8 @@ export const COLORS = {
   textSub: '#A0A5B9',     
   inputBg: '#F5F6FA',     
   danger: '#FF6B6B',      
-  success: '#4CAF50',     
+  success: '#4CAF50', 
+  placeholder: '#959995',
 };
 
 export const styles = StyleSheet.create({
@@ -31,7 +32,7 @@ export const styles = StyleSheet.create({
   inputGroup: { marginTop: 15 },
   input: { 
     backgroundColor: COLORS.inputBg, borderRadius: 14, paddingHorizontal: 20, paddingVertical: 18, 
-    fontSize: 15, color: COLORS.textMain, fontWeight: '500' 
+    fontSize: 15, color: COLORS.textMain, fontWeight: '500', placeholderTextColor: COLORS.placeholder
   },
   rowInputs: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginTop: 15 },
   halfInput: { flex: 1 },
@@ -103,5 +104,52 @@ export const styles = StyleSheet.create({
   searchBoxModal: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.inputBg,
     borderRadius: 12, paddingHorizontal: 12, height: 45, marginBottom: 10
+  },
+  //Nút thêm ảnh
+  // Thêm vào file style.js
+
+  addPhotoDashBox: {
+    width: 90,
+    height: 90,
+    backgroundColor: '#F9F9F9', // Nền xám cực nhạt
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',     // Màu viền và chữ (đậm hơn nền một chút)
+    borderStyle: 'dashed',      // Viền nét đứt
+    borderRadius: 12,
+    justifyContent: 'center',   // Căn giữa theo chiều dọc
+    alignItems: 'center',       // Căn giữa theo chiều ngang
+    marginRight: 12,
+  },
+  bigPlus: {
+    fontSize: 40,               // Dấu cộng to
+    color: '#D0D0D0',           // Màu nhạt đồng bộ với viền
+    fontWeight: '200',          // Nét mảnh cho tinh tế
+    lineHeight: 45,             // Giúp dấu cộng nằm đúng giữa
+  },
+  subTextPlus: {
+    fontSize: 11,
+    color: '#D0D0D0',           // Chữ "Thêm ảnh" nhạt
+    marginTop: -5,              // Kéo chữ lên gần dấu cộng hơn
+  },
+  photoContainer: {
+    marginRight: 12,
+    position: 'relative',
+  },
+  imageItem: {
+    width: 90,
+    height: 90,
+    borderRadius: 12,
+  },
+  deleteBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: 'rgba(0,0,0,0.4)', // Nút xóa mờ nhạt
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   }
+
 });

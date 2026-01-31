@@ -7,7 +7,7 @@ import {
 
 // --- ĐƯỜNG DẪN FIREBASE ---
 import { db } from '../../../firebase/firebaseConfig'; 
-import { collection, getDocs, doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, setDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 
 // --- IMPORT STYLE ---
 import { styles, COLORS } from './style'; 
@@ -49,48 +49,83 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
   };
 
   useEffect(() => { fetchData(); }, []);
+  const sendNotificationToUser = async (recipe, type, content) => {
+    try {
+      await addDoc(collection(db, "notification"), {
+        email: recipe.authorId, // Hoặc recipe.authorName nếu bạn lưu ID vào đó. Quan trọng là trùng với ID user đang đăng nhập.
+        type: type,             // approved / rejected / needs_edit
+        content: content,
+        time: serverTimestamp(),
+        recipeId: recipe.id,    // Lưu thêm ID món để sau này user bấm vào thì mở món đó ra (tuỳ chọn)
+        isRead: false           // Thêm cái này để sau làm tính năng chưa đọc/đã đọc (tuỳ chọn)
+      });
+      console.log("Đã gửi thông báo cho user:", recipe.authorId);
+    } catch (error) {
+      console.error("Lỗi gửi thông báo:", error);
+    }
+  };
 
   // --- 2. XỬ LÝ NÚT BẤM ---
   
   // A. Duyệt
-  const confirmApprove = () => {
-    Alert.alert("Xác nhận", "Duyệt công thức này lên ứng dụng?", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Duyệt", onPress: handleApprove }
-    ]);
-  };
-
   const handleApprove = async () => {
     setLoading(true);
     try {
-      // Lưu sang bảng chính thức (recipes)
-      // Dữ liệu đã khớp cấu trúc bên Đóng góp (description chứa text, photosArray chứa ảnh)
+      // ... (Logic lưu sang bảng recipes giữ nguyên) ...
       await setDoc(doc(db, MAIN_RECIPE_COLLECTION, selectedRecipe.id), {
           ...selectedRecipe,
           status: 'published',
           approvedAt: serverTimestamp()
       });
-      // Cập nhật trạng thái trong bảng chờ
+      // ... (Logic update bảng suggest giữ nguyên) ...
       await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), { status: 'approved' });
+
+      // ===> THÊM DÒNG NÀY: Gửi thông báo
+      await sendNotificationToUser(selectedRecipe, 'approved', `Chúc mừng! Món "${selectedRecipe.title}" của bạn đã được duyệt và đăng công khai.`);
       
-      closeModal("Đã duyệt thành công! ✅");
+      closeModal("Đã duyệt và gửi thông báo! ");
     } catch (error) { Alert.alert("Lỗi", error.message); setLoading(false); }
+  };
+  const confirmApprove = () => {
+      Alert.alert(
+          "Duyệt món ăn",
+          "Bạn có chắc chắn muốn duyệt món này và đăng công khai không?",
+          [
+              { text: "Hủy", style: "cancel" },
+              { 
+                  text: "Duyệt ngay", 
+                  onPress: handleApprove // <--- Gọi hàm xử lý khi bấm OK
+              } 
+          ]
+      );
   };
 
   // B. Từ chối
-  const confirmReject = () => {
-    Alert.alert("Cảnh báo", "Bạn chắc chắn muốn từ chối bài này?", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Từ chối", style: 'destructive', onPress: handleReject }
-    ]);
-  };
-
   const handleReject = async () => {
     setLoading(true);
     try {
        await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), { status: 'rejected' });
-       closeModal("Đã từ chối món ăn! ❌");
+       
+       // ===> THÊM DÒNG NÀY: Gửi thông báo
+       await sendNotificationToUser(selectedRecipe, 'rejected', `Rất tiếc, món "${selectedRecipe.title}" đã bị từ chối.`);
+
+       closeModal("Đã từ chối và gửi thông báo!");
     } catch (error) { Alert.alert("Lỗi", error.message); setLoading(false); }
+  };
+  // 2. Hàm xác nhận (Gắn hàm này vào nút bấm trong giao diện)
+  const confirmReject = () => {
+      Alert.alert(
+          "Xác nhận từ chối",
+          "Bạn có chắc chắn muốn từ chối món ăn này không? Hành động này không thể hoàn tác.",
+          [
+              { text: "Hủy", style: "cancel" },
+              { 
+                  text: "Từ chối", 
+                  style: 'destructive', 
+                  onPress: handleReject // <-- Bấm OK thì mới gọi hàm xử lý ở trên
+              } 
+          ]
+      );
   };
 
   // C. Gửi yêu cầu sửa
@@ -106,7 +141,16 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
                   adminFeedback: feedbackText, 
                   updatedAt: serverTimestamp()
               });
-              closeModal("Đã gửi yêu cầu sửa! 📝");
+
+              // ===> THÊM DÒNG NÀY: Gửi thông báo
+              await sendNotificationToUser(
+                  selectedRecipe, 
+                  'needs_edit', 
+                  `Yêu cầu sửa món "${selectedRecipe.title}"`, 
+                  feedbackText 
+              );
+
+              closeModal("Đã gửi yêu cầu sửa!");
           } catch (error) { Alert.alert("Lỗi", error.message); setLoading(false); }
       }}
     ]);
@@ -139,22 +183,44 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
         <FlatList
           data={dataList}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ padding: 20 }}
+          contentContainerStyle={{ padding: 15 }} // Cách lề ngoài cùng một chút
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.card} onPress={() => onOpenDetail(item)}>
-               {/* Hiển thị ảnh đại diện */}
-               <Image source={{ uri: item.photo_url || 'https://via.placeholder.com/150' }} style={styles.cardImage} />
+               
+               {/* 1. BÊN TRÁI: ẢNH (Kích thước cố định) */}
+               <Image 
+                 source={{ uri: item.photo_url || 'https://via.placeholder.com/150' }} 
+                 style={styles.cardImage} 
+               />
+               
+               {/* 2. Ở GIỮA: THÔNG TIN (Dùng flex: 1 để giãn hết khoảng trống còn lại) */}
                <View style={styles.cardContent}>
-                 <Text style={styles.cardTitle}>{item.title}</Text>
-                 <Text style={styles.cardAuthor}>Gửi bởi: {item.authorName || 'Ẩn danh'}</Text>
-                 <Text style={{ fontSize: 12, color: item.status === 'updated' ? 'orange' : '#888' }}>
-                    {item.status === 'updated' ? '⚠️ Đã chỉnh sửa lại' : '🕒 Đang chờ duyệt'}
+                 <Text style={styles.cardTitle} numberOfLines={1}>
+                    {item.title}
+                 </Text>
+                 <Text style={styles.cardAuthor}>
+                    👤 {item.authorName || 'Ẩn danh'}
+                 </Text>
+                 <Text style={[
+                    styles.statusText, 
+                    { color: item.status === 'updated' ? '#E65100' : '#757575' }
+                 ]}>
+                    {item.status === 'updated' ? '⚠️ Đã sửa lại' : '🕒 Đang chờ duyệt'}
                  </Text>
                </View>
-               <Text style={{fontSize: 24, color: '#ccc'}}>›</Text>
+
+               {/* 3. BÊN PHẢI: MŨI TÊN */}
+               <View style={styles.arrowContainer}>
+                  <Text style={styles.arrowIcon}>›</Text>
+               </View>
+
             </TouchableOpacity>
           )}
-          ListEmptyComponent={<Text style={styles.emptyText}>Hiện không có bài nào chờ duyệt</Text>}
+          ListEmptyComponent={
+            <Text style={{textAlign:'center', marginTop: 20, color:'#999'}}>
+                Hiện không có bài nào chờ duyệt
+            </Text>
+          }
         />
       )}
 
@@ -229,7 +295,15 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
                                     <TouchableOpacity style={[styles.miniBtn, {backgroundColor:'#ccc'}]} onPress={() => setShowFeedbackInput(false)}>
                                         <Text>Hủy</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={[styles.miniBtn, {backgroundColor: COLORS.secondary}]} onPress={handleSendFeedback}>
+                                    <TouchableOpacity 
+                                        style={[styles.miniBtn, {
+                                            backgroundColor: '#000', 
+                                            paddingVertical: 8, 
+                                            paddingHorizontal: 15, 
+                                            borderRadius: 4
+                                        }]} 
+                                        onPress={handleSendFeedback}
+                                    >
                                         <Text style={{color:'#fff', fontWeight:'bold'}}>Gửi yêu cầu</Text>
                                     </TouchableOpacity>
                                 </View>

@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useLayoutEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Image, TouchableOpacity,ScrollView } from "react-native";
 import { differenceInDays, startOfDay } from 'date-fns';
+// Firebase Imports
+
 import { auth, db } from '../../firebase/firebaseConfig';
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import MenuImage from "../../components/MenuImage/MenuImage";
+import RecipeNotification from './RecipeNotification';
 import { Ionicons } from '@expo/vector-icons'; // Sử dụng thêm icon vector cho nhẹ app
 
 export default function NotificationScreen(props) {
@@ -75,8 +78,12 @@ export default function NotificationScreen(props) {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={{paddingBottom: 20}}>
+      <RecipeNotification navigation={navigation} />
       {hasExpiredItems ? (
+
+        
+        // --- TRƯỜNG HỢP CÓ ĐỒ HẾT HẠN/QUÁ HẠN ---
         <TouchableOpacity 
             style={styles.notificationCard}
             onPress={() => navigation.navigate('Pantry')}
@@ -99,7 +106,7 @@ export default function NotificationScreen(props) {
             <Text style={styles.emptySubText}>Tất cả nguyên liệu trong kho vẫn còn tươi ngon.</Text>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
