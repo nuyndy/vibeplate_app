@@ -5,12 +5,13 @@ import {
   SafeAreaView, KeyboardAvoidingView, Platform
 } from 'react-native';
 
-// --- ĐƯỜNG DẪN FIREBASE ---
+// --- FIREBASE ---
 import { db } from '../../../firebase/firebaseConfig'; 
 import { collection, getDocs, doc, updateDoc, setDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 
-// --- IMPORT STYLE ---
+// --- STYLE ---
 import { styles, COLORS } from './style'; 
+import { Ionicons } from '@expo/vector-icons';
 
 const SUGGEST_COLLECTION = 'suggested_recipes';
 const MAIN_RECIPE_COLLECTION = 'recipes';
@@ -24,6 +25,7 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackMode, setFeedbackMode] = useState(''); // 'reject' hoặc 'edit'
 
   // --- 1. LẤY DỮ LIỆU ---
   const fetchData = async () => {
@@ -35,7 +37,6 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
         items.push({ id: document.id, ...document.data() });
       });
       
-      // Lọc bài pending (chờ) hoặc updated (đã sửa lại)
       const pendingItems = items.filter(item => 
         item.status === 'pending' || item.status === 'updated'
       );
@@ -49,111 +50,77 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
   };
 
   useEffect(() => { fetchData(); }, []);
+
   const sendNotificationToUser = async (recipe, type, content) => {
     try {
-      await addDoc(collection(db, "notification"), {
-        email: recipe.authorId, // Hoặc recipe.authorName nếu bạn lưu ID vào đó. Quan trọng là trùng với ID user đang đăng nhập.
-        type: type,             // approved / rejected / needs_edit
+      // Tạo ID duy nhất bằng cách kết hợp email author và ID món ăn
+      // Ví dụ: "user@gmail.com_recipe123"
+      const customNotiId = `${recipe.authorId}_${recipe.id}`;
+      
+      const notiRef = doc(db, "notification", customNotiId);
+
+      await setDoc(notiRef, {
+        email: recipe.authorId, 
+        type: type,             
         content: content,
-        time: serverTimestamp(),
-        recipeId: recipe.id,    // Lưu thêm ID món để sau này user bấm vào thì mở món đó ra (tuỳ chọn)
-        isRead: false           // Thêm cái này để sau làm tính năng chưa đọc/đã đọc (tuỳ chọn)
+        time: serverTimestamp(), // Cập nhật lại thời gian mới nhất
+        recipeId: recipe.id,    
+        isRead: false, // Reset lại trạng thái chưa đọc khi có cập nhật mới
+        title: recipe.title // Nên thêm title vào để hiển thị ở danh sách thông báo dễ hơn
       });
-      console.log("Đã gửi thông báo cho user:", recipe.authorId);
     } catch (error) {
-      console.error("Lỗi gửi thông báo:", error);
+      console.error("Lỗi gửi/cập nhật thông báo:", error);
     }
   };
 
-  // --- 2. XỬ LÝ NÚT BẤM ---
-  
-  // A. Duyệt
+  // --- 2. XỬ LÝ DUYỆT (APPROVE) ---
   const handleApprove = async () => {
     setLoading(true);
     try {
-      // ... (Logic lưu sang bảng recipes giữ nguyên) ...
       await setDoc(doc(db, MAIN_RECIPE_COLLECTION, selectedRecipe.id), {
           ...selectedRecipe,
           status: 'published',
           approvedAt: serverTimestamp()
       });
-      // ... (Logic update bảng suggest giữ nguyên) ...
       await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), { status: 'approved' });
 
-      // ===> THÊM DÒNG NÀY: Gửi thông báo
-      await sendNotificationToUser(selectedRecipe, 'approved', `Chúc mừng! Món "${selectedRecipe.title}" của bạn đã được duyệt và đăng công khai.`);
-      
-      closeModal("Đã duyệt và gửi thông báo! ");
+      await sendNotificationToUser(selectedRecipe, 'approved', `Chúc mừng! Món "${selectedRecipe.title}" đã được duyệt.`);
+      closeModal("Đã duyệt công thức thành công!");
     } catch (error) { Alert.alert("Lỗi", error.message); setLoading(false); }
   };
+
   const confirmApprove = () => {
-      Alert.alert(
-          "Duyệt món ăn",
-          "Bạn có chắc chắn muốn duyệt món này và đăng công khai không?",
-          [
-              { text: "Hủy", style: "cancel" },
-              { 
-                  text: "Duyệt ngay", 
-                  onPress: handleApprove // <--- Gọi hàm xử lý khi bấm OK
-              } 
-          ]
-      );
+    Alert.alert("Duyệt món ăn", "Đăng công khai món này?", [
+      { text: "Hủy", style: "cancel" },
+      { text: "Duyệt ngay", onPress: handleApprove } 
+    ]);
   };
 
-  // B. Từ chối
-  const handleReject = async () => {
+  // --- 3. XỬ LÝ GỬI PHẢN HỒI (REJECT & EDIT) ---
+  const handleSubmitFeedback = async () => {
+    if (!feedbackText.trim()) return Alert.alert("Lỗi", "Vui lòng nhập lý do.");
+
     setLoading(true);
     try {
-       await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), { status: 'rejected' });
-       
-       // ===> THÊM DÒNG NÀY: Gửi thông báo
-       await sendNotificationToUser(selectedRecipe, 'rejected', `Rất tiếc, món "${selectedRecipe.title}" đã bị từ chối.`);
-
-       closeModal("Đã từ chối và gửi thông báo!");
+      if (feedbackMode === 'reject') {
+        // Xử lý TỪ CHỐI
+        await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), { 
+          status: 'rejected',
+          adminFeedback: feedbackText 
+        });
+        await sendNotificationToUser(selectedRecipe, 'rejected', `Món "${selectedRecipe.title}" bị từ chối. Lý do: ${feedbackText}`);
+        closeModal("Đã từ chối công thức.");
+      } else {
+        // Xử lý YÊU CẦU SỬA
+        await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), {
+          status: 'needs_edit', 
+          adminFeedback: feedbackText, 
+          updatedAt: serverTimestamp()
+        });
+        await sendNotificationToUser(selectedRecipe, 'needs_edit', `Yêu cầu sửa món "${selectedRecipe.title}": ${feedbackText}`);
+        closeModal("Đã gửi yêu cầu chỉnh sửa.");
+      }
     } catch (error) { Alert.alert("Lỗi", error.message); setLoading(false); }
-  };
-  // 2. Hàm xác nhận (Gắn hàm này vào nút bấm trong giao diện)
-  const confirmReject = () => {
-      Alert.alert(
-          "Xác nhận từ chối",
-          "Bạn có chắc chắn muốn từ chối món ăn này không? Hành động này không thể hoàn tác.",
-          [
-              { text: "Hủy", style: "cancel" },
-              { 
-                  text: "Từ chối", 
-                  style: 'destructive', 
-                  onPress: handleReject // <-- Bấm OK thì mới gọi hàm xử lý ở trên
-              } 
-          ]
-      );
-  };
-
-  // C. Gửi yêu cầu sửa
-  const handleSendFeedback = async () => {
-    if (!feedbackText.trim()) return Alert.alert("Lỗi", "Vui lòng nhập lý do cần sửa.");
-    Alert.alert("Xác nhận", "Gửi yêu cầu sửa cho người dùng?", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Gửi", onPress: async () => {
-          setLoading(true);
-          try {
-              await updateDoc(doc(db, SUGGEST_COLLECTION, selectedRecipe.id), {
-                  status: 'needs_edit', 
-                  adminFeedback: feedbackText, 
-                  updatedAt: serverTimestamp()
-              });
-
-              // ===> THÊM DÒNG NÀY: Gửi thông báo
-              await sendNotificationToUser(
-                  selectedRecipe, 
-                  'needs_edit', 
-                  `Yêu cầu sửa món "${selectedRecipe.title}"`, 
-                  feedbackText 
-              );
-
-              closeModal("Đã gửi yêu cầu sửa!");
-          } catch (error) { Alert.alert("Lỗi", error.message); setLoading(false); }
-      }}
-    ]);
   };
 
   const closeModal = (message) => {
@@ -161,6 +128,7 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
     setModalVisible(false);
     setShowFeedbackInput(false);
     setFeedbackText('');
+    setFeedbackMode('');
     fetchData(); 
   };
 
@@ -183,44 +151,21 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
         <FlatList
           data={dataList}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ padding: 15 }} // Cách lề ngoài cùng một chút
+          contentContainerStyle={{ padding: 15 }}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.card} onPress={() => onOpenDetail(item)}>
-               
-               {/* 1. BÊN TRÁI: ẢNH (Kích thước cố định) */}
-               <Image 
-                 source={{ uri: item.photo_url || 'https://via.placeholder.com/150' }} 
-                 style={styles.cardImage} 
-               />
-               
-               {/* 2. Ở GIỮA: THÔNG TIN (Dùng flex: 1 để giãn hết khoảng trống còn lại) */}
+               <Image source={{ uri: item.photo_url || 'https://via.placeholder.com/150' }} style={styles.cardImage} />
                <View style={styles.cardContent}>
-                 <Text style={styles.cardTitle} numberOfLines={1}>
-                    {item.title}
-                 </Text>
-                 <Text style={styles.cardAuthor}>
-                    👤 {item.authorName || 'Ẩn danh'}
-                 </Text>
-                 <Text style={[
-                    styles.statusText, 
-                    { color: item.status === 'updated' ? '#E65100' : '#757575' }
-                 ]}>
+                 <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+                 <Text style={styles.cardAuthor}>👤 {item.authorName || 'Ẩn danh'}</Text>
+                 <Text style={[styles.statusText, { color: item.status === 'updated' ? '#E65100' : '#757575' }]}>
                     {item.status === 'updated' ? '⚠️ Đã sửa lại' : '🕒 Đang chờ duyệt'}
                  </Text>
                </View>
-
-               {/* 3. BÊN PHẢI: MŨI TÊN */}
-               <View style={styles.arrowContainer}>
-                  <Text style={styles.arrowIcon}>›</Text>
-               </View>
-
+               <View style={styles.arrowContainer}><Text style={styles.arrowIcon}>›</Text></View>
             </TouchableOpacity>
           )}
-          ListEmptyComponent={
-            <Text style={{textAlign:'center', marginTop: 20, color:'#999'}}>
-                Hiện không có bài nào chờ duyệt
-            </Text>
-          }
+          ListEmptyComponent={<Text style={{textAlign:'center', marginTop: 20, color:'#999'}}>Không có bài nào chờ duyệt</Text>}
         />
       )}
 
@@ -239,17 +184,13 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
             <ScrollView style={{flex: 1, paddingHorizontal: 20}}>
                 {selectedRecipe && (
                     <>
-                        {/* 1. ẢNH BÌA */}
                         <Image source={{ uri: selectedRecipe.photo_url }} style={styles.detailImage} />
-                        
-                        {/* 2. TIÊU ĐỀ & THÔNG SỐ */}
                         <Text style={styles.detailTitle}>{selectedRecipe.title}</Text>
                         <View style={{flexDirection: 'row', gap: 15, marginBottom: 20}}>
                              <Text style={styles.metaBadge}>⏱ {selectedRecipe.time} phút</Text>
                              <Text style={styles.metaBadge}>👥 {selectedRecipe.servings} suất</Text>
                         </View>
 
-                        {/* 3. NGUYÊN LIỆU */}
                         <Text style={styles.sectionHeader}>Nguyên liệu:</Text>
                         {selectedRecipe.ingredients?.map((ing, index) => (
                             <View key={index} style={styles.ingredientRow}>
@@ -258,53 +199,32 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
                             </View>
                         ))}
 
-                        {/* 4. CÁCH LÀM (Hiển thị description thay vì steps) */}
                         <Text style={styles.sectionHeader}>Cách làm / Mô tả:</Text>
-                        <View style={styles.stepBox}>
-                           <Text style={styles.textBody}>{selectedRecipe.description}</Text>
-                        </View>
+                        <View style={styles.stepBox}><Text style={styles.textBody}>{selectedRecipe.description}</Text></View>
 
-                        {/* 5. ẢNH PHỤ (Nếu có trong photosArray) */}
-                        {selectedRecipe.photosArray && selectedRecipe.photosArray.length > 1 && (
-                            <View>
-                                <Text style={styles.sectionHeader}>Ảnh minh họa thêm:</Text>
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginVertical: 10}}>
-                                    {selectedRecipe.photosArray.map((imgUrl, idx) => (
-                                        <Image 
-                                            key={idx} 
-                                            source={{uri: imgUrl}} 
-                                            style={{width: 120, height: 120, borderRadius: 8, marginRight: 10, backgroundColor: '#eee'}} 
-                                        />
-                                    ))}
-                                </ScrollView>
-                            </View>
-                        )}
-
-                        {/* KHUNG NHẬP FEEDBACK KHI ADMIN YÊU CẦU SỬA */}
+                        {/* KHUNG NHẬP FEEDBACK (DÙNG CHUNG CHO REJECT & EDIT) */}
                         {showFeedbackInput && (
-                            <View style={styles.feedbackBox}>
-                                <Text style={{fontWeight:'bold', color:'#E65100', marginBottom:5}}>Lý do yêu cầu sửa:</Text>
+                            <View style={[styles.feedbackBox, {borderColor: feedbackMode === 'reject' ? '#FFCDD2' : '#FFE0B2'}]}>
+                                <Text style={{fontWeight:'bold', color: feedbackMode === 'reject' ? COLORS.danger : '#E65100', marginBottom:5}}>
+                                    {feedbackMode === 'reject' ? 'Lý do từ chối:' : 'Lý do yêu cầu sửa:'}
+                                </Text>
                                 <TextInput 
                                     style={styles.inputFeedback}
-                                    placeholder="Nhập lý do (ví dụ: Thiếu ảnh, sai chính tả...)"
+                                    placeholder="Nhập nội dung phản hồi cho người dùng..."
                                     multiline
                                     value={feedbackText}
                                     onChangeText={setFeedbackText}
+                                    autoFocus
                                 />
                                 <View style={{flexDirection:'row', gap:10, marginTop:10}}>
                                     <TouchableOpacity style={[styles.miniBtn, {backgroundColor:'#ccc'}]} onPress={() => setShowFeedbackInput(false)}>
                                         <Text>Hủy</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity 
-                                        style={[styles.miniBtn, {
-                                            backgroundColor: '#000', 
-                                            paddingVertical: 8, 
-                                            paddingHorizontal: 15, 
-                                            borderRadius: 4
-                                        }]} 
-                                        onPress={handleSendFeedback}
+                                        style={[styles.miniBtn, {backgroundColor: feedbackMode === 'reject' ? COLORS.danger : '#000'}]} 
+                                        onPress={handleSubmitFeedback}
                                     >
-                                        <Text style={{color:'#fff', fontWeight:'bold'}}>Gửi yêu cầu</Text>
+                                        <Text style={{color:'#fff', fontWeight:'bold'}}>Xác nhận & Gửi</Text>
                                     </TouchableOpacity>
                                 </View>
                             </View>
@@ -315,14 +235,20 @@ export default function AdminSuggestedRecipesScreen({ navigation }) {
             </ScrollView>
             </KeyboardAvoidingView>
 
-            {/* THANH TÁC VỤ */}
+            {/* THANH TÁC VỤ DƯỚI CÙNG */}
             {!showFeedbackInput && (
                 <View style={styles.bottomBar}>
-                    <TouchableOpacity style={[styles.bigBtn, {backgroundColor: '#FFEBEE'}]} onPress={confirmReject}>
+                    <TouchableOpacity 
+                        style={[styles.bigBtn, {backgroundColor: '#FFEBEE'}]} 
+                        onPress={() => { setFeedbackMode('reject'); setShowFeedbackInput(true); }}
+                    >
                         <Text style={{color: COLORS.danger, fontWeight:'bold'}}>TỪ CHỐI</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.bigBtn, {backgroundColor: '#FFF3E0'}]} onPress={() => setShowFeedbackInput(true)}>
+                    <TouchableOpacity 
+                        style={[styles.bigBtn, {backgroundColor: '#FFF3E0'}]} 
+                        onPress={() => { setFeedbackMode('edit'); setShowFeedbackInput(true); }}
+                    >
                         <Text style={{color: '#E65100', fontWeight:'bold'}}>YÊU CẦU SỬA</Text>
                     </TouchableOpacity>
 

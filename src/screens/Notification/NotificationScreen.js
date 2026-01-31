@@ -1,182 +1,130 @@
 import React, { useState, useEffect, useLayoutEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView, SafeAreaView } from "react-native";
 import { differenceInDays, startOfDay } from 'date-fns';
 import { auth, db } from '../../firebase/firebaseConfig';
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, getDoc, doc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import MenuImage from "../../components/MenuImage/MenuImage";
-import { Ionicons } from '@expo/vector-icons'; // Sử dụng thêm icon vector cho nhẹ app
+import { Ionicons } from '@expo/vector-icons';
+import RecipeNotification from './RecipeNotification';
 
 export default function NotificationScreen(props) {
   const { navigation } = props;
-  const [hasExpiredItems, setHasExpiredItems] = useState(false);
-  const [expiredCount, setExpiredCount] = useState(0); // Thêm state đếm số lượng để hiển thị cho trực quan
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [expiredCount, setExpiredCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'THÔNG BÁO',
-      headerTitleStyle: { fontWeight: '900', letterSpacing: 1, fontSize: 14 },
+      headerTitleStyle: { fontWeight: '900', letterSpacing: 1, fontSize: 15 },
       headerLeft: () => <MenuImage onPress={() => navigation.openDrawer()} />,
-      headerStyle: { elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }
     });
   }, []);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        const q = query(collection(db, "inventory"), where("email", "==", user.email));
-        
-        const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        const userDoc = await getDoc(doc(db, "users", user.email));
+        const userRole = userDoc.data()?.role;
+        const checkAdmin = userRole === 'admin';
+        setIsAdmin(checkAdmin);
+
+        let unsubPending = () => {};
+        if (checkAdmin) {
+          const qPending = query(collection(db, "suggested_recipes"), where("status", "==", "pending"));
+          unsubPending = onSnapshot(qPending, (snap) => setPendingCount(snap.size));
+        }
+
+        const qInv = query(collection(db, "inventory"), where("email", "==", user.email));
+        const unsubInv = onSnapshot(qInv, (snapshot) => {
           const today = startOfDay(new Date());
           let count = 0;
-
-          snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            let expDate;
-
-            // KIỂM TRA KIỂU DỮ LIỆU: Firebase Timestamp hay String?
-            if (data.expiryDate && typeof data.expiryDate.toDate === 'function') {
-              expDate = startOfDay(data.expiryDate.toDate());
-            } else if (typeof data.expiryDate === 'string') {
-              expDate = startOfDay(new Date(data.expiryDate));
-            } else {
-              return; // Bỏ qua nếu không có ngày
-            }
-            
-            const diff = differenceInDays(expDate, today);
-            
-            // Logic: Thông báo nếu còn <= 3 ngày hoặc đã quá hạn
-            if (diff <= 3) {
-              count++;
-            }
+          snapshot.docs.forEach(d => {
+            const data = d.data();
+            let expDate = data.expiryDate?.toDate ? startOfDay(data.expiryDate.toDate()) : startOfDay(new Date(data.expiryDate));
+            if (differenceInDays(expDate, today) <= 3) count++;
           });
-
           setExpiredCount(count);
-          setHasExpiredItems(count > 0);
           setIsLoading(false);
         });
-
-        return () => unsubscribeSnapshot();
-      } else {
-        setIsLoading(false);
-      }
+        return () => { unsubPending(); unsubInv(); };
+      } else { setIsLoading(false); }
     });
-
     return () => unsubscribeAuth();
   }, []);
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="small" color="#000" />
-      </View>
-    );
-  }
+  if (isLoading) return <View style={styles.loadingContainer}><ActivityIndicator size="small" color="#000" /></View>;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{paddingBottom: 20}}>
-      <RecipeNotification navigation={navigation} />
-      {hasExpiredItems ? (
-
+    <SafeAreaView style={{flex: 1, backgroundColor: '#FBFCFE'}}>
+      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         
-        // --- TRƯỜNG HỢP CÓ ĐỒ HẾT HẠN/QUÁ HẠN ---
-        <TouchableOpacity 
-            style={styles.notificationCard}
-            onPress={() => navigation.navigate('Pantry')}
-        >
-            <View style={styles.iconCircle}>
-                <Ionicons name="alert-circle" size={28} color="#ff0000" />
+        {/* THÔNG BÁO ADMIN */}
+        {isAdmin && pendingCount > 0 && (
+          <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('AdminDataManagement', { tab: 'suggested_recipes' })}>
+            <View style={[styles.statusIndicator, { backgroundColor: '#096b3a' }]} />
+            <View style={styles.cardMain}>
+              <View style={styles.row}>
+                <View style={[styles.tag, { backgroundColor: '#E3F2FD' }]}>
+                  <Ionicons name="shield-checkmark" size={12} color="#096b3a" />
+                  <Text style={[styles.tagText, { color: '#096b3a' }]}>QUẢN TRỊ VIÊN</Text>
+                </View>
+                <Text style={styles.timeText}>Yêu cầu mới</Text>
+              </View>
+              <Text style={styles.contentTitle}>Có {pendingCount} món ăn đang chờ duyệt</Text>
             </View>
-            <View style={styles.textContainer}>
-                <Text style={styles.warningText}>Tủ lạnh có {expiredCount} món cần xử lý</Text>
-                <Text style={styles.subText}>Có nguyên liệu sắp hết hạn hoặc đã quá hạn. Chạm để kiểm tra ngay.</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* THÔNG BÁO TỦ LẠNH */}
+        {expiredCount > 0 && (
+          <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Pantry')}>
+            <View style={[styles.statusIndicator, { backgroundColor: '#ff0015' }]} />
+            <View style={styles.cardMain}>
+              <View style={styles.row}>
+                <View style={[styles.tag, { backgroundColor: '#FFF0F0' }]}>
+                  <Ionicons name="alert-circle" size={12} color="#ff0015" />
+                  <Text style={[styles.tagText, { color: '#ff0015' }]}>KIỂM TRA TỦ LẠNH</Text>
+                </View>
+                <Text style={styles.timeText}>Sắp hết hạn</Text>
+              </View>
+              <Text style={styles.contentTitle}>Có {expiredCount} thực phẩm cần sử dụng ngay</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#CCC" />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconWrapper}>
-                <Ionicons name="checkmark-circle-outline" size={80} color="#E0E0E0" />
-            </View>
-            <Text style={styles.emptyText}>Mọi thứ đều ổn</Text>
-            <Text style={styles.emptySubText}>Tất cả nguyên liệu trong kho vẫn còn tươi ngon.</Text>
-        </View>
-      )}
-    </ScrollView>
+          </TouchableOpacity>
+        )}
+
+        {/* THÔNG BÁO NGƯỜI DÙNG */}
+        <RecipeNotification navigation={navigation} />
+
+        {!isAdmin && expiredCount === 0 && pendingCount === 0 && (
+           <View style={styles.emptyContainer}>
+             <Ionicons name="leaf-outline" size={60} color="#E0E0E0" />
+             <Text style={styles.emptyText}>Mọi thứ đều ổn</Text>
+           </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#fff', 
-    padding: 20 
+  contentContainer: { padding: 16 },
+  loadingContainer: { flex: 1, justifyContent: 'center' },
+  card: {
+    backgroundColor: '#fff', borderRadius: 20, marginBottom: 12,
+    flexDirection: 'row', overflow: 'hidden',
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2
   },
-  loadingContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  notificationCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 20,
-    alignItems: 'center',
-    // Shadow phong cách Clean tối giản
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F5F5F5',
-  },
-  iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F9F9F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15
-  },
-  textContainer: {
-    flex: 1,
-  },
-  warningText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#000',
-    marginBottom: 4,
-    letterSpacing: -0.3
-  },
-  subText: {
-    fontSize: 13,
-    color: '#666',
-    lineHeight: 18,
-  },
-  emptyContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center',
-  },
-  emptyIconWrapper: {
-    marginBottom: 20,
-    opacity: 0.5
-  },
-  emptyText: { 
-    fontSize: 18, 
-    fontWeight: '900',
-    color: '#000',
-    letterSpacing: 1,
-    textTransform: 'uppercase'
-  },
-  emptySubText: {
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-    fontSize: 14
-  }
+  statusIndicator: { width: 6 },
+  cardMain: { flex: 1, padding: 16 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  tag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
+  tagText: { fontSize: 10, fontWeight: '800' },
+  timeText: { fontSize: 11, color: '#BBB' },
+  contentTitle: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
+  emptyContainer: { alignItems: 'center', marginTop: 100 },
+  emptyText: { color: '#CCC', fontWeight: 'bold', marginTop: 10 }
 });

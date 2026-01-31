@@ -94,7 +94,6 @@ export default function AdminUsersScreen({ navigation }) {
       // Chỉ update các trường cần thiết
       await updateDoc(userRef, {
         displayName: formData.displayName || '',
-        email: formData.email || '',
         role: formData.role || 'user',
       });
 
@@ -118,7 +117,7 @@ export default function AdminUsersScreen({ navigation }) {
   const renderFormFields = () => (
     <>
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>ID Document (Không thể sửa)</Text>
+        <Text style={styles.label}>Email (Không thể sửa)</Text>
         <TextInput
           style={[styles.input, styles.inputDisabled]}
           value={formData.id || ''}
@@ -132,15 +131,6 @@ export default function AdminUsersScreen({ navigation }) {
           style={styles.input}
           value={formData.displayName || ''}
           onChangeText={(text) => setFormData({ ...formData, displayName: text })}
-        />
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.email || ''}
-          onChangeText={(text) => setFormData({ ...formData, email: text })}
         />
       </View>
 
