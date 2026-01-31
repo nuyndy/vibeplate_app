@@ -1,9 +1,14 @@
 import React, { useLayoutEffect, useState, useEffect } from 'react';
 import { 
-  doc, 
+  collection, 
+  query, 
+  where, 
   onSnapshot, 
-  setDoc, 
-  updateDoc 
+  addDoc, 
+  doc, 
+  deleteDoc, 
+  updateDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { db, auth } from '../../firebase/firebaseConfig'; 
 import {
@@ -22,52 +27,58 @@ export default function ShoppingListScreen({ navigation }) {
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-   
+    
   // State nhập liệu
   const [newItemName, setNewItemName] = useState('');
   const [newItemQuantity, setNewItemQuantity] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('kg');
-   
+    
   // State Modal Sửa
   const [isEditModalVisible, setEditModalVisible] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
-   
+    
   const [editName, setEditName] = useState('');
   const [editQuantity, setEditQuantity] = useState('');
   const [editUnit, setEditUnit] = useState('kg');
-   
+    
   const [isUnitModalVisible, setUnitModalVisible] = useState(false);
   const [isSelectingForEdit, setIsSelectingForEdit] = useState(false); 
 
-  // --- 1. LẤY DỮ LIỆU (THEO UID USER) ---
+  // --- 1. LẤY DỮ LIỆU (Query Collection theo userId là email) ---
   useEffect(() => {
     const currentUser = auth.currentUser;
-    // Kiểm tra UID thay vì email
-    if (!currentUser || !currentUser.uid) {
+    // Kiểm tra user có tồn tại và có email không
+    if (!currentUser || !currentUser.email) {
         setItems([]); 
         setLoading(false);
         return;
     }
 
-    // 🔥 SỬA: Dùng currentUser.uid làm tên Document thay vì email
-    const userDocRef = doc(db, 'shoppingList', currentUser.uid);
+    // 🔥 SỬA: Query vào collection 'shoppingList' lọc theo trường userId (là email)
+    const q = query(
+      collection(db, 'shoppingList'), 
+      where('userId', '==', currentUser.email)
+    );
 
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        let currentList = data.myList || [];
-        
-        // Sắp xếp client-side (pending lên đầu)
-        currentList.sort((a, b) => {
-             if (a.status === 'pending' && b.status === 'completed') return -1;
-             if (a.status === 'completed' && b.status === 'pending') return 1;
-             return 0;
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const list = [];
+      querySnapshot.forEach((doc) => {
+        // 🔥 Map dữ liệu từ document, lấy doc.id làm itemId
+        list.push({
+          itemId: doc.id, 
+          ...doc.data()
         });
+      });
+      
+      // Sắp xếp client-side (pending lên đầu)
+      list.sort((a, b) => {
+           if (a.status === 'pending' && b.status === 'completed') return -1;
+           if (a.status === 'completed' && b.status === 'pending') return 1;
+           // Nếu cùng trạng thái, sắp xếp theo thời gian mới nhất (tùy chọn)
+           return b.updatedAt?.seconds - a.updatedAt?.seconds;
+      });
 
-        setItems(currentList);
-      } else {
-        setItems([]);
-      }
+      setItems(list);
       setLoading(false);
     }, (error) => {
       console.log("Lỗi tải data:", error);
@@ -76,7 +87,7 @@ export default function ShoppingListScreen({ navigation }) {
 
     return () => unsubscribe();
   }, []); 
-   
+    
   // Setup Header
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -92,28 +103,25 @@ export default function ShoppingListScreen({ navigation }) {
     });
   }, [navigation, items]);
 
-  // --- 2. THÊM MỚI (Lưu vào Document ID là UID) ---
+  // --- 2. THÊM MỚI (Add Document với Auto ID) ---
   const handleAddItem = async () => {
     const currentUser = auth.currentUser;
-    if (!currentUser) return;
+    if (!currentUser || !currentUser.email) return;
     if (newItemName.trim() === '') { Alert.alert("Lỗi", "Chưa nhập tên món!"); return; }
 
     try {
-      // 🔥 SỬA: Object không chứa userId hay userEmail nữa
-      const newItem = {
-        itemId: Date.now().toString(),
-        name: newItemName,
-        quantity: Number(newItemQuantity) || 1,
-        unit: selectedUnit,
-        status: 'pending',
-        updatedAt: new Date()
+      // 🔥 SỬA: Tạo object theo đúng định dạng yêu cầu
+      const newItemData = {
+        email: currentUser.email,   // string - tên gmail người dùng
+        name: newItemName,           // string - đồ cần mua
+        quantity: Number(newItemQuantity) || 1, // number - số lượng
+        unit: selectedUnit,          // string - đơn vị tính
+        status: 'pending',           // string - trạng thái
+        updatedAt: new Date()        // timestamp - thời gian cập nhật
       };
 
-      const updatedList = [...items, newItem];
-
-      // 🔥 SỬA: Lưu vào document có ID là UID
-      const userDocRef = doc(db, 'shoppingList', currentUser.uid);
-      await setDoc(userDocRef, { myList: updatedList });
+      // 🔥 Thêm document mới vào collection (ID tự sinh)
+      await addDoc(collection(db, 'shoppingList'), newItemData);
 
       setNewItemName(''); setNewItemQuantity(''); setSelectedUnit('kg');
       Keyboard.dismiss();
@@ -122,82 +130,69 @@ export default function ShoppingListScreen({ navigation }) {
     }
   };
 
-  // --- 3. CẬP NHẬT (Sửa trong Mảng) ---
+  // --- 3. CẬP NHẬT (Update Document theo ID) ---
   const handleUpdateItem = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser || !editingItemId) return;
+    if (!editingItemId) return;
 
     try {
-      const updatedList = items.map(item => {
-        if (item.itemId === editingItemId) {
-            return {
-                ...item,
-                name: editName,
-                quantity: Number(editQuantity) || 1,
-                unit: editUnit,
-                updatedAt: new Date()
-            };
-        }
-        return item;
+      // 🔥 SỬA: Update trực tiếp vào document ID
+      const itemRef = doc(db, 'shoppingList', editingItemId);
+      
+      await updateDoc(itemRef, {
+        name: editName,
+        quantity: Number(editQuantity) || 1,
+        unit: editUnit,
+        updatedAt: new Date()
       });
-
-      // 🔥 SỬA: Update vào document UID
-      const userDocRef = doc(db, 'shoppingList', currentUser.uid);
-      await updateDoc(userDocRef, { myList: updatedList });
-       
+        
       setEditModalVisible(false); setEditingItemId(null);
     } catch (error) { Alert.alert("Lỗi update", error.message); }
   };
 
   // Toggle trạng thái
-  const toggleItemStatus = async (itemId) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-
+  const toggleItemStatus = async (itemId, currentStatus) => {
     try {
-        const updatedList = items.map(item => {
-            if (item.itemId === itemId) {
-                return {
-                    ...item,
-                    status: item.status === 'pending' ? 'completed' : 'pending',
-                    updatedAt: new Date()
-                };
-            }
-            return item;
-        });
+        // 🔥 SỬA: Update trạng thái document
+        const itemRef = doc(db, 'shoppingList', itemId);
+        const newStatus = currentStatus === 'pending' ? 'completed' : 'pending';
 
-        // 🔥 SỬA: Update vào document UID
-        const userDocRef = doc(db, 'shoppingList', currentUser.uid);
-        await updateDoc(userDocRef, { myList: updatedList });
+        await updateDoc(itemRef, {
+            status: newStatus,
+            updatedAt: new Date()
+        });
 
     } catch (error) { console.log(error); }
   };
 
-  // Xóa món
+  // Xóa món (Xóa Document)
   const handleDeleteItem = async (itemId) => {
-    const currentUser = auth.currentUser;
     Alert.alert("Xóa?", "Bạn chắc chắn xóa?", [
       { text: "Hủy", style: "cancel" },
       { text: "Xóa", style: "destructive", onPress: async () => {
           try {
-            const updatedList = items.filter(item => item.itemId !== itemId);
-            // 🔥 SỬA: Update vào document UID
-            const userDocRef = doc(db, 'shoppingList', currentUser.uid);
-            await setDoc(userDocRef, { myList: updatedList });
+            // 🔥 SỬA: Xóa document dựa trên ID
+            await deleteDoc(doc(db, 'shoppingList', itemId));
           } catch (error) { Alert.alert("Lỗi", "Không xóa được"); }
       }}
     ]);
   };
 
-  // Xóa hết (Dọn giỏ)
+  // Xóa hết (Dọn giỏ - Xóa Batch)
   const handleClearAll = () => {
-    const currentUser = auth.currentUser;
     Alert.alert("Dọn sạch giỏ?", "Thao tác này sẽ xóa hết món ăn.", [
       { text: "Hủy", style: "cancel" },
       { text: "Xóa hết", style: "destructive", onPress: async () => {
-          // 🔥 SỬA: Update vào document UID
-          const userDocRef = doc(db, 'shoppingList', currentUser.uid);
-          await setDoc(userDocRef, { myList: [] });
+          try {
+            // 🔥 SỬA: Dùng Batch để xóa nhiều document cùng lúc
+            const batch = writeBatch(db);
+            items.forEach(item => {
+                const itemRef = doc(db, 'shoppingList', item.itemId);
+                batch.delete(itemRef);
+            });
+            await batch.commit();
+          } catch (error) {
+            Alert.alert("Lỗi", "Không thể dọn giỏ");
+          }
       }}
     ]);
   };
@@ -216,12 +211,12 @@ export default function ShoppingListScreen({ navigation }) {
         
         <TouchableOpacity 
             style={[styles.checkBox, isCompleted && styles.checkBoxActive]} 
-            onPress={() => toggleItemStatus(item.itemId)}
+            onPress={() => toggleItemStatus(item.itemId, item.status)}
         >
             {isCompleted && <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828643.png' }} style={{ width: 12, height: 12, tintColor: '#fff' }} />}
         </TouchableOpacity>
 
-        <TouchableOpacity style={{ flex: 1 }} onPress={() => toggleItemStatus(item.itemId)}>
+        <TouchableOpacity style={{ flex: 1 }} onPress={() => toggleItemStatus(item.itemId, item.status)}>
             <View>
                 <Text style={[styles.itemText, isCompleted && styles.itemTextBought]} numberOfLines={1}>
                     {item.name} {item.quantity ? `(${item.quantity} ${item.unit || ''})` : ''}
@@ -265,7 +260,7 @@ export default function ShoppingListScreen({ navigation }) {
           <FlatList data={items} keyExtractor={item => item.itemId} renderItem={renderItem} contentContainerStyle={styles.listContent} 
           ListEmptyComponent={() => <View style={styles.emptyContainer}><Text style={styles.emptyText}>Danh sách trống</Text></View>} />
       }
-      
+       
       {/* Unit Modal */}
       <Modal visible={isUnitModalVisible} transparent={true} onRequestClose={() => setUnitModalVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setUnitModalVisible(false)}>
