@@ -9,12 +9,10 @@ import {
   limit 
 } from 'firebase/firestore';
 
-// Tên các Collection trong Firestore
 const COLL_RECIPES = 'recipes';
 const COLL_CATEGORIES = 'categories';
 const COLL_INGREDIENTS = 'ingredients';
 
-// --- HÀM HELPER: Format dữ liệu trả về ---
 const formatDoc = (docSnap) => {
   return { id: docSnap.id, ...docSnap.data() };
 };
@@ -101,7 +99,46 @@ export async function getIngredientUrl(ingredientID) {
 // ==========================================
 // 3. CÁC HÀM QUERY & FILTER
 // ==========================================
+// Tìm tất cả món ăn có chứa một Ingredient ID cụ thể
+export async function getRecipesByIngredient(ingredientId) {
+  if (!ingredientId) return [];
 
+  try {
+    // 1. Lấy tất cả công thức về
+    const snapshot = await getDocs(collection(db, COLL_RECIPES));
+    const results = [];
+
+    // 2. Duyệt qua từng công thức để kiểm tra mảng ingredients
+    snapshot.forEach((doc) => {
+      const data = formatDoc(doc);
+      
+      if (data.ingredients && Array.isArray(data.ingredients)) {
+        // Kiểm tra xem recipe này có chứa ingredientId cần tìm không
+        const hasIngredient = data.ingredients.some((item) => {
+          // Xử lý dữ liệu: ingredients có thể là mảng [id, quantity] hoặc object {ingredientId: id}
+          let currentId;
+          if (Array.isArray(item)) {
+            currentId = item[0];
+          } else if (typeof item === 'object' && item !== null) {
+            currentId = item.ingredientId || item.id;
+          }
+
+          // So sánh ID (chuyển về String để so sánh chính xác)
+          return String(currentId) === String(ingredientId);
+        });
+
+        if (hasIngredient) {
+          results.push(data);
+        }
+      }
+    });
+
+    return results;
+  } catch (error) {
+    console.error("Error getRecipesByIngredient:", error);
+    return [];
+  }
+}
 // Lấy danh sách món ăn thuộc 1 Category cụ thể
 export async function getRecipesByCategoryId(categoryId) {
   if (categoryId === undefined || categoryId === null) return [];
