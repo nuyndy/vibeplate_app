@@ -275,3 +275,25 @@ export async function getAllIngredients(ingredientsArray) {
     return [];
   }
 }
+// Đếm số lượng món ăn trong một category
+export async function getNumberOfRecipes(categoryId) {
+  if (categoryId === undefined || categoryId === null) return 0;
+
+  try {
+    // Xử lý ID giống như hàm getRecipesByCategoryId
+    const numId = Number(categoryId);
+    const queryId = isNaN(numId) ? categoryId : numId;
+
+    // Tạo query
+    const q = query(collection(db, COLL_RECIPES), where('categoryId', '==', queryId));
+    
+    // Lấy snapshot
+    const snapshot = await getDocs(q);
+    
+    // Trả về số lượng document tìm thấy
+    return snapshot.size;
+  } catch (error) {
+    console.error("Error getNumberOfRecipes:", error);
+    return 0;
+  }
+}
