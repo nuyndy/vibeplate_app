@@ -10,12 +10,10 @@ import MenuImage from '../../components/MenuImage/MenuImage';
 import { sendMessageToGemini, generateRecipeJSON } from '../Services/AIService'; 
 
 // -------------------------------------------------------------------
-// TẠO BIẾN TOÀN CỤC (GLOBAL VARIABLE) ĐỂ LƯU CHAT TRONG PHIÊN SỬ DỤNG
-// Biến này sẽ giữ nguyên giá trị khi bạn chuyển màn hình.
-// Chỉ khi bạn vuốt tắt app (Kill app) thì nó mới bị reset lại từ đầu.
+// BIẾN TOÀN CỤC LƯU LỊCH SỬ CHAT
 // -------------------------------------------------------------------
 let sessionChatHistory = [
-  { id: '1', type: 'text', text: 'Chào bạn! Hôm nay bạn muốn nấu món gì? Mình sẽ kiểm tra tủ lạnh và tâm trạng của bạn để gợi ý nhé!', sender: 'ai' }
+  { id: '1', type: 'text', text: 'Chào bạn! 👋 Hôm nay bạn muốn nấu món gì? Mình sẽ kiểm tra tủ lạnh và tâm trạng của bạn để gợi ý nhé! ✨', sender: 'ai' }
 ];
 
 const DetailedRecipeCard = ({ recipeData }) => {
@@ -33,11 +31,11 @@ const DetailedRecipeCard = ({ recipeData }) => {
           <Text style={styles.cardMetaText}>⏱ {recipeData.time} phút</Text>
           <Text style={styles.cardMetaText}>👥 {recipeData.servings} người</Text>
         </View>
-        <Text style={styles.cardSectionTitle}>Nguyên liệu:</Text>
+        <Text style={styles.cardSectionTitle}>🛒 Nguyên liệu:</Text>
         {recipeData.ingredients?.map((ing, index) => (
           <Text key={index} style={styles.cardIngredientText}>• {ing.name} - {ing.amount}</Text>
         ))}
-        <Text style={styles.cardSectionTitle}>Cách làm:</Text>
+        <Text style={styles.cardSectionTitle}>👨‍🍳 Cách làm:</Text>
         <Text style={styles.cardDescriptionText}>{recipeData.description}</Text>
       </View>
     </View>
@@ -59,7 +57,7 @@ export default function ChatScreen({ navigation }) {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: 'Trợ lý AI VibePlate',
+      title: 'Trợ lý VibePlate',
       headerLeft: () => (<MenuImage onPress={() => navigation.openDrawer()} />),
     });
   }, [navigation]);
@@ -75,21 +73,30 @@ export default function ChatScreen({ navigation }) {
 
     try {
       const lowerText = userText.toLowerCase();
-      const isAskingForRecipe = lowerText.includes('công thức') || lowerText.includes('cách làm') || lowerText.includes('nấu') || lowerText.length <= 15; 
+      const isAskingForRecipe = lowerText.includes('công thức') || lowerText.includes('cách làm') || lowerText.includes('nấu') || userText.length <= 15; 
 
       if (isAskingForRecipe) {
          const recipeJson = await generateRecipeJSON(userText);
          if (recipeJson) {
-            const textIntroMsg = { id: Date.now().toString(), type: 'text', text: recipeJson.warningMessage || `Đây là công thức món ${recipeJson.title}!`, sender: 'ai' };
+            // THÊM STICKER VÀO PHẦN TRẢ LỜI TỰ ĐỘNG
+            const introMsg = `Tuyệt vời! 🌟 Mình đã tìm thấy công thức món ${recipeJson.title} và tối ưu kết hợp với đồ trong tủ lạnh cho bạn đây! 🥣🥗`;
+            
+            const textIntroMsg = { 
+                id: Date.now().toString(), 
+                type: 'text', 
+                text: recipeJson.warningMessage || introMsg, 
+                sender: 'ai' 
+            };
             const cardMsg = { id: (Date.now() + 1).toString(), type: 'recipe_card', recipeData: recipeJson, sender: 'ai' };
             setMessages(prev => [...prev, textIntroMsg, cardMsg]);
          }
       } else {
-         const textReply = await sendMessageToGemini(userText, messages); 
-         setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: textReply, sender: 'ai' }]);
+          const textReply = await sendMessageToGemini(userText, messages); 
+          // Thêm sticker nhẹ vào cuối câu trả lời bình thường của AI
+          setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: `${textReply} ✨`, sender: 'ai' }]);
       }
     } catch (error) {
-        setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: 'Lỗi rồi, thử lại nhé!', sender: 'ai' }]);
+        setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: 'Lỗi rồi, thử lại nhé! 😅', sender: 'ai' }]);
     } finally {
         setIsTyping(false);
     }
@@ -127,14 +134,14 @@ export default function ChatScreen({ navigation }) {
       {isTyping && (
         <View style={styles.typingContainer}>
             <ActivityIndicator size="small" color="#666" />
-            <Text style={styles.typingText}>Đang suy nghĩ...</Text>
+            <Text style={styles.typingText}>Đang suy nghĩ... 🔍</Text>
         </View>
       )}
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
         <View style={styles.inputWrapper}>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} placeholder="Bạn muốn ăn gì?" value={inputText} onChangeText={setInputText} multiline />
+            <TextInput style={styles.input} placeholder="Bạn muốn ăn gì? 🍲" value={inputText} onChangeText={setInputText} multiline />
             <TouchableOpacity onPress={sendMessage} style={[styles.sendButton, { opacity: inputText.trim() ? 1 : 0.5 }]} disabled={!inputText.trim() || isTyping}>
               <Ionicons name="arrow-up" size={20} color="white" />
             </TouchableOpacity>
