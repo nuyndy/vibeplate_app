@@ -68,7 +68,22 @@ export const getUserProfile = async () => {
     return null;
   }
 };
-
+// HÀM LẤY TÂM TRẠNG
+export const getUserMood = async () => {
+  try {
+    const moodKey = await AsyncStorage.getItem('user_current_mood');
+    const moodMap = {
+      happy: "Vui vẻ",
+      sad: "Buồn bã",
+      tired: "Mệt mỏi",
+      hungry: "Đói rã rời",
+      neutral: "Bình thường"
+    };
+    return moodKey ? moodMap[moodKey] : "Bình thường";
+  } catch (error) {
+    return "Bình thường";
+  }
+};
 // 4. HÀM LẤY KHO CÔNG THỨC APP (Dữ liệu gốc của App)
 const getAppRecipesContext = async () => {
   try {
