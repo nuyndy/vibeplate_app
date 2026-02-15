@@ -9,6 +9,7 @@ import { auth, db } from '../../firebase/firebaseConfig';
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import MenuImage from "../../components/MenuImage/MenuImage";
 import HeaderSection from "./HeaderSection";
@@ -38,6 +39,15 @@ export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState("Chào bạn");
   const [weatherData, setWeatherData] = useState({ temp: '--', city: 'Đang định vị...' });
   const [isShaking, setIsShaking] = useState(false);
+  useEffect(() => {
+    const loadSavedMood = async () => {
+      try {
+        const savedMood = await AsyncStorage.getItem('user_current_mood');
+        if (savedMood) setMood(savedMood);
+      } catch (e) { console.log("Lỗi load mood:", e); }
+    };
+    loadSavedMood();
+  }, []);
 
   // --- INDEXING DATA ---
   const indexedRecipes = useMemo(() => {
@@ -136,6 +146,10 @@ export default function HomeScreen({ navigation }) {
 
   const handleMoodFilter = async (selectedMood) => {
     setMood(selectedMood); // Khi đổi mood, useEffect ở trên sẽ tự chạy lọc Offline trước
+    
+    try {
+        await AsyncStorage.setItem('user_current_mood', selectedMood);
+    } catch (e) { console.log("Lỗi lưu mood:", e); }
 
     if (selectedMood === 'neutral') return;
 

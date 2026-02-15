@@ -1,254 +1,185 @@
 import { db, auth } from '../../firebase/firebaseConfig';
-import { collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 1. CẤU HÌNH API GEMINI
-const API_KEY = 'AIzaSyCf1LurfdtV6bsa36GEwmrh9mpZNOyqiRw'; 
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+const OPENROUTER_API_KEY = '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'; 
+const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL_NAME = "arcee-ai/trinity-large-preview:free"; 
 
-// 2. HÀM LẤY TỦ LẠNH (Truy xuất qua Email)
+// --- 1. LẤY TỦ LẠNH ---
 export const getUserFridge = async () => {
   try {
     const user = auth.currentUser;
     if (!user || !user.email) return [];
+    const q = query(collection(db, "inventory"), where("email", "==", user.email));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => `${doc.data().name} (${doc.data().quantity} ${doc.data().unit})`);
+  } catch (e) { return []; }
+};
 
-    const inventoryRef = collection(db, "inventory");
-    const q = query(inventoryRef, where("email", "==", user.email));
-    const querySnapshot = await getDocs(q);
-    
-    let userIngredients = [];
-    querySnapshot.forEach((doc) => {
+// --- 2. LẤY DỊ ỨNG ---
+export const getUserPreferences = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user || !user.email) return null;
+    const q = query(collection(db, "user_preferences"), where("email", "==", user.email));
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return snap.docs[0].data();
+  } catch (e) { return null; }
+};
+
+// --- 3. LẤY MÓN YÊU THÍCH ---
+export const getUserFavorites = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user || !user.email) return [];
+    const q = query(collection(db, "favorites"), where("email", "==", user.email));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => doc.data().title);
+  } catch (e) { return []; }
+};
+
+// --- 4. LẤY TÂM TRẠNG ---
+export const getUserMood = async () => {
+  try {
+    const mood = await AsyncStorage.getItem('user_current_mood');
+    const map = { happy: "Vui vẻ", sad: "Buồn chán", tired: "Mệt mỏi", hungry: "Đói meo", neutral: "Bình thường" };
+    return map[mood] || "Bình thường";
+  } catch (e) { return "Bình thường"; }
+};
+
+// --- 5. LẤY DANH SÁCH MÓN ĂN TỪ DATABASE CỦA APP ---
+export const getAppRecipes = async () => {
+  try {
+    const snap = await getDocs(collection(db, "recipes"));
+    return snap.docs.map(doc => {
       const data = doc.data();
-      if (data.name) {
-        userIngredients.push(`${data.name} (${data.quantity || ''} ${data.unit || ''})`.trim());
-      }
+      // Chỉ lấy các trường cần thiết để tiết kiệm token cho AI
+      return {
+        recipeId: data.recipeId,
+        title: data.title,
+        photo_url: data.photo_url || "",
+        time: data.time || 30,
+        servings: data.servings || 2
+      };
     });
-    return userIngredients;
-  } catch (error) {
-    console.error("Lỗi lấy Tủ lạnh:", error);
+  } catch (e) { 
+    console.log("Lỗi tải database món ăn:", e);
     return []; 
   }
 };
 
-
-// 3. HÀM LẤY HỒ SƠ USER (Truy xuất Sở thích & Món yêu thích qua Email)
-export const getUserProfile = async () => {
+// --- 6. HÀM TẠO CÔNG THỨC THÔNG MINH (KẾT HỢP DB + AI) ---
+export const generateRecipeJSON = async (userRequest) => {
   try {
-    const user = auth.currentUser;
-    if (!user || !user.email) return null;
+    const [fridge, prefs, favorites, mood, appRecipes] = await Promise.all([
+      getUserFridge(), getUserPreferences(), getUserFavorites(), getUserMood(), getAppRecipes()
+    ]);
 
-    let profileData = { allergies: [], dislikedIngredients: [], favoriteTastes: [], favoriteRecipes: [] };
-
-    // 3.1. Truy xuất Dị ứng & Sở thích
-    const prefsRef = collection(db, "user_preferences");
-    const qPrefs = query(prefsRef, where("email", "==", user.email));
-    const prefsSnap = await getDocs(qPrefs);
+    const strFridge = fridge.length > 0 ? fridge.join(", ") : "Trống";
+    const strAllergies = prefs?.allergies?.join(", ") || "Không có";
+    const strFavorites = favorites.length > 0 ? favorites.join(", ") : "Chưa có";
     
-    if (!prefsSnap.empty) {
-      const pData = prefsSnap.docs[0].data();
-      profileData.allergies = pData.allergies || [];
-      profileData.dislikedIngredients = pData.dislikedIngredients || [];
-      profileData.favoriteTastes = pData.favoriteTastes || [];
-    }
+    // Thu gọn list database để đưa cho AI
+    const strAppRecipes = JSON.stringify(appRecipes);
 
-    // 3.2. Truy xuất Các món ăn đã thả tim
-    const favRef = collection(db, "favorites");
-    const qFav = query(favRef, where("email", "==", user.email));
-    const favSnap = await getDocs(qFav);
-    
-    favSnap.forEach((doc) => {
-      const fData = doc.data();
-      if (fData.title) {
-        profileData.favoriteRecipes.push(fData.title);
-      }
+    const systemInstruction = `
+    Bạn là đầu bếp AI VibePlate. 
+    Vấn đề DỊ ỨNG là ƯU TIÊN SỐ 1, tuyệt đối không vi phạm.
+
+    [THÔNG TIN HIỆN TẠI]:
+    - Yêu cầu món: "${userRequest}"
+    - DỊ ỨNG (CẤM TUYỆT ĐỐI): [${strAllergies}]
+    - Tủ lạnh có: [${strFridge}]
+    - DATABASE ỨNG DỤNG: ${strAppRecipes}
+
+    [QUY TRÌNH XỬ LÝ - PHẢI TUÂN THỦ NGHIÊM NGẶT]:
+    1. KIỂM TRA DỊ ỨNG: Món "${userRequest}" có dính dị ứng không? Nếu CÓ, TỪ CHỐI đổi món khác an toàn.
+    2. TÌM TRONG DATABASE ỨNG DỤNG (ƯU TIÊN): 
+       - Tìm xem trong DATABASE ỨNG DỤNG có món nào giống hoặc gần giống với "${userRequest}" không.
+       - NẾU CÓ TRONG DATABASE: 
+         + Bắt buộc dùng \`recipeId\`, \`photo_url\`, \`time\`, \`title\` của món đó trong Database.
+         + KIỂM TRA TỦ LẠNH THAY THẾ: Nghĩ xem món đó bình thường nấu cần gì. Nếu tủ lạnh [${strFridge}] có đồ thay thế được (Ví dụ: thiếu Chanh thì dùng Sấu, thiếu Đường dùng Mật ong...), hãy ghi rõ vào \`description\` và \`ingredients\`.
+         + \`warningMessage\` phải báo: "Mình tìm thấy trong tủ lạnh có: [Nguyên liệu tủ lạnh]. Mình đã điều chỉnh công thức để phù hợp với những nguyên liệu này, bạn xem nhé!"
+       - NẾU KHÔNG CÓ TRONG DATABASE:
+         + Bạn được phép tự sáng tạo công thức mới.
+         + BẮT BUỘC gán \`recipeId\` = "none"
+         + BẮT BUỘC gán \`photo_url\` = ""
+         + \`warningMessage\` báo: "Hệ thống chưa có món này, nhưng mình đã tự sáng tạo một công thức riêng kết hợp với đồ trong tủ lạnh cho bạn đây!"
+    3. KHÔNG dùng dấu **. Trả về đúng TÊN nguyên liệu bằng chữ.
+
+    [FORMAT JSON]:
+    {
+      "recipeId": "ID từ Database HOẶC 'none'",
+      "warningMessage": "Thông báo dựa theo quy trình trên",
+      "title": "Tên món ăn",
+      "time": 30,
+      "servings": 2,
+      "ingredients": [{"name": "Tên nguyên liệu", "amount": "Lượng"}],
+      "description": "Hướng dẫn chi tiết (bao gồm cả cách xử lý nguyên liệu thay thế nếu có)",
+      "photo_url": "URL từ Database HOẶC ''"
+    }`;
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL_NAME,
+        messages: [{ role: "user", content: systemInstruction }],
+        temperature: 0.2
+      })
     });
 
-    return profileData;
+    const data = await response.json();
+    let resContent = data.choices[0].message.content;
+    const parsed = JSON.parse(resContent.substring(resContent.indexOf('{'), resContent.lastIndexOf('}') + 1));
+
+    // ========================================================
+    // LOG RA TERMINAL ĐỂ BẠN KIỂM TRA
+    console.log("\n===========================================");
+    console.log("🤖 AI TRẢ VỀ DỮ LIỆU JSON CHO MÓN:", userRequest);
+    console.log("Trạng thái nguồn:", parsed.recipeId === "none" ? "AI TỰ NGHĨ" : `TỪ DATABASE (ID: ${parsed.recipeId})`);
+    console.log(JSON.stringify(parsed, null, 2));
+    console.log("===========================================\n");
+    // ========================================================
+
+    // Xử lý logic photo_url: Nếu AI tự nghĩ (none) thì ép bằng null để không lỗi giao diện
+    const finalPhotoUrl = (parsed.recipeId !== "none" && parsed.photo_url && parsed.photo_url !== "") 
+                          ? parsed.photo_url 
+                          : null;
+
+    return {
+      ...parsed,
+      photo_url: finalPhotoUrl,
+      warningMessage: (parsed.warningMessage || "").replace(/\*\*/g, ""),
+      description: (parsed.description || "").replace(/\*\*/g, ""),
+      // Nếu là AI tự nghĩ, tạo ID ảo tạm thời cho React FlatList key, nếu là DB thì giữ nguyên ID
+      recipeId: parsed.recipeId === "none" ? "ai_gen_" + Date.now() : parsed.recipeId
+    };
+
   } catch (error) {
-    console.error("Lỗi lấy User Profile:", error);
+    console.error("AI Error:", error);
     return null;
   }
 };
-// HÀM LẤY TÂM TRẠNG
-export const getUserMood = async () => {
-  try {
-    const moodKey = await AsyncStorage.getItem('user_current_mood');
-    const moodMap = {
-      happy: "Vui vẻ",
-      sad: "Buồn bã",
-      tired: "Mệt mỏi",
-      hungry: "Đói rã rời",
-      neutral: "Bình thường"
-    };
-    return moodKey ? moodMap[moodKey] : "Bình thường";
-  } catch (error) {
-    return "Bình thường";
-  }
-};
-// 4. HÀM LẤY KHO CÔNG THỨC APP (Dữ liệu gốc của App)
-const getAppRecipesContext = async () => {
-  try {
-    const recipesRef = collection(db, "recipes");
-    // Lấy 30 món để AI có nhiều "vốn liếng" dò tìm hơn
-    const q = query(recipesRef, limit(30)); 
-    const querySnapshot = await getDocs(q);
-    
-    let recipesData = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      recipesData.push({
-        recipeId: data.recipeId, categoryId: data.categoryId, 
-        title: data.title, time: data.time, servings: data.servings,
-        ingredients: data.ingredients, description: data.description,
-        photo_url: data.photo_url 
-      });
-    });
-    
-    return recipesData.length === 0 ? "[]" : JSON.stringify(recipesData);
-  } catch (error) {
-    console.error("Lỗi lấy Recipe Context:", error);
-    return "[]";
-  }
-};
 
-// 5. HÀM CHAT THÔNG THƯỜNG (Có nhớ Lịch sử + Bắt Dị Ứng)
-export const sendMessageToGemini = async (userMessage, history = []) => {
-  try {
-    const [recipeContext, userIngredients, userProfile] = await Promise.all([
-        getAppRecipesContext(), getUserFridge(), getUserProfile() 
-    ]);
-
-    const strUserFridge = userIngredients.length > 0 ? userIngredients.join(", ") : "Tủ lạnh trống";
-    const strAllergies = userProfile?.allergies?.length > 0 ? userProfile.allergies.join(", ") : "Không có";
-    const strDislikes = userProfile?.dislikedIngredients?.length > 0 ? userProfile.dislikedIngredients.join(", ") : "Không có";
-    const strTastes = userProfile?.favoriteTastes?.length > 0 ? userProfile.favoriteTastes.join(", ") : "Ăn gì cũng được";
-    const strFavs = userProfile?.favoriteRecipes?.length > 0 ? userProfile.favoriteRecipes.join(", ") : "Chưa có dữ liệu";
-
-    const formattedHistory = history.map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.text }]
-    }));
-
-    const systemInstruction = `
-    [VAI TRÒ]: Trợ lý đầu bếp thông minh VibePlate.
-    
-    [HỒ SƠ USER]:
-    - Tủ lạnh: ${strUserFridge}
-    - DỊ ỨNG (CẤM KỴ): ${strAllergies}
-    - Ghét ăn: ${strDislikes}
-    - Khẩu vị: ${strTastes}
-    - Gu món ăn yêu thích: ${strFavs}
-    
-    [DỮ LIỆU APP]: ${recipeContext}
-
-    [NGUYÊN TẮC QUAN TRỌNG]:
-    1. TUYỆT ĐỐI KHÔNG gợi ý món có chứa nguyên liệu User bị DỊ ỨNG.
-    2. Hạn chế nguyên liệu User ghét, ưu tiên nêm nếm theo Khẩu vị.
-    3. Ưu tiên hướng dẫn nấu các món từ nguyên liệu trong tủ lạnh và [DỮ LIỆU APP].
-    4. Ghi nhớ lịch sử trò chuyện.
-
-    // 🔥 [SỬA Ở ĐÂY]: Thêm luật cấm dùng dấu ** trong chat thường
-    5. TUYỆT ĐỐI KHÔNG sử dụng ký tự Markdown như ** để in đậm văn bản. Khi nhắc đến tên món ăn, hãy để trong ngoặc kép "". Ví dụ: "Sườn Xào Chua Ngọt".
-
-    [CÂU HỎI MỚI]: "${userMessage}"
-    `;
-
-    const payload = {
-      contents: [...formattedHistory, { role: "user", parts: [{ text: systemInstruction }] }]
-    };
-
-    const response = await fetch(API_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    if (data.error) throw new Error(data.error.message);
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Xin lỗi, tôi chưa hiểu ý bạn.";
-  } catch (error) {
-    console.error("Lỗi AI Chat:", error);
-    return "Hệ thống đang bận, vui lòng thử lại sau!";
-  }
-};
-
-// 6. HÀM TẠO CÔNG THỨC CHUẨN JSON (ĐÃ TÍCH HỢP TÌM KIẾM NGỮ NGHĨA)
-// =========================================================================
-export const generateRecipeJSON = async (userRequest) => {
-  try {
-    // Lọc text
-    const cleanRequest = userRequest.toLowerCase().trim();
-
-    const [recipeContext, userIngredients, userProfile] = await Promise.all([
-        getAppRecipesContext(), getUserFridge(), getUserProfile() 
-    ]);
-
-    const strUserFridge = userIngredients.length > 0 ? userIngredients.join(", ") : "Tủ lạnh trống";
-    const strAllergies = userProfile?.allergies?.length > 0 ? userProfile.allergies.join(", ") : "Không có";
-    const strDislikes = userProfile?.dislikedIngredients?.length > 0 ? userProfile.dislikedIngredients.join(", ") : "Không có";
-    const strTastes = userProfile?.favoriteTastes?.length > 0 ? userProfile.favoriteTastes.join(", ") : "Ăn gì cũng được";
-    const strFavs = userProfile?.favoriteRecipes?.length > 0 ? userProfile.favoriteRecipes.join(", ") : "Chưa có dữ liệu";
-
-    // 🔥 PROMPT ĐÃ ĐƯỢC HUẤN LUYỆN ĐỂ TÌM KIẾM NGỮ NGHĨA (SEMANTIC SEARCH)
-    const systemInstruction = `
-    Bạn là siêu đầu bếp AI của ứng dụng VibePlate.
-    
-    [THÔNG TIN NGƯỜI DÙNG]:
-    - Yêu cầu món ăn/nguyên liệu: "${cleanRequest}"
-    - Tủ lạnh: ${strUserFridge}
-    - DỊ ỨNG (CẤM KỴ): ${strAllergies}
-    - Ghét ăn (Hạn chế): ${strDislikes}
-    - Khẩu vị: ${strTastes}
-    - Gu món ăn: ${strFavs}
-    
-    - Kho công thức App: ${recipeContext}
-
-    [LOGIC XỬ LÝ]:
-    BƯỚC 1: Kiểm tra DỊ ỨNG. NẾU bất kỳ món nào trong [Kho công thức App] chứa nguyên liệu dị ứng -> BỎ QUA MÓN ĐÓ NGAY LẬP TỨC. 
-    BƯỚC 2: TÌM KIẾM NGỮ NGHĨA (QUAN TRỌNG NHẤT). Tuyệt đối KHÔNG tìm kiếm máy móc khớp từng chữ. 
-      - Ví dụ: Nếu người dùng nhập "thịt bò" hoặc "bò", bạn PHẢI TỰ HIỂU nó khớp với "Thịt bò xay", "Bò bít tết"... trong [Kho công thức App]. 
-      - Ưu tiên cao nhất là trả về món ĐÃ CÓ trong App nếu nguyên liệu có liên quan mật thiết. Chỉ tự chế món mới khi thực sự không có món nào liên quan.
-    BƯỚC 3: Quyết định ID và Ảnh:
-      - TRƯỜNG HỢP A (Dùng món trong App): Giữ nguyên CHÍNH XÁC 'recipeId', 'categoryId' VÀ 'photo_url' gốc của món đó trong App. (Được phép tự động sửa mảng 'ingredients' bằng đồ thay thế từ tủ lạnh VÀ thêm dòng "Đã thay thế..." vào 'description').
-      - TRƯỜNG HỢP B (Tự chế món mới): Gán giá trị "none" cho 'recipeId' và 'categoryId'. Gán "https://via.placeholder.com/300?text=Mon+Moi" cho 'photo_url'.
-    
-    BƯỚC 4: FORMAT TEXT:KHÔNG sử dụng ký tự Markdown như **.
-
-    [YÊU CẦU ĐẦU RA]: BẮT BUỘC TRẢ VỀ 1 JSON OBJECT THUẦN TÚY:
-    {
-      "warningMessage": "Nếu user yêu cầu món có chứa nguyên liệu dị ứng, hãy giải thích và gợi ý món khác,
-      "recipeId": <ID gốc từ App HOẶC "none">,
-      "categoryId": "<ID gốc từ App HOẶC "none">",
-      "title": "<Tên món>",
-      "servings": <Số người ăn - Kiểu Number>,
-      "photo_url": "<URL ảnh gốc từ App HOẶC URL placeholder nếu tự chế>",
-      "photosArray": [],
-      "time": <Thời gian nấu (phút) - Kiểu Number>,
-      "description": "CHỈ GHI CÁC BƯỚC NẤU ĂN VÀO ĐÂY.",
-      "ingredients": [
-        { "name": "<Tên nguyên liệu>", "amount": "<Số lượng>" }
-      ]
-    }
-    `;
-
-    const payload = {
-      contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    };
-
-    const response = await fetch(API_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    if (data.error) throw new Error(data.error.message);
-
-    return JSON.parse(data.candidates[0].content.parts[0].text); 
-
-  } catch (error) {
-    console.error("Lỗi gen JSON:", error);
-    return {
-      warningMessage: "", 
-      recipeId: "none", categoryId: "none", title: "Món ăn tạm thời (Do lỗi mạng)", servings: 1,
-      photo_url: "https://via.placeholder.com/300?text=Error", photosArray: [], time: 15,
-      description: "Hệ thống AI đang bận hoặc quá tải. Vui lòng thử lại sau.", ingredients: []
-    };
-  }
+// --- 7. HÀM CHAT TỰ DO ---
+export const sendMessageToGemini = async (text, history) => {
+    try {
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+                model: MODEL_NAME,
+                messages: [
+                    { role: "system", content: "Bạn là trợ lý VibePlate, thân thiện, không dùng dấu **." },
+                    ...history.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text })),
+                    { role: "user", content: text }
+                ]
+            })
+        });
+        const data = await response.json();
+        return data.choices[0].message.content.replace(/\*\*/g, "");
+    } catch (e) { return "Hệ thống bận, thử lại sau nhé!"; }
 };
