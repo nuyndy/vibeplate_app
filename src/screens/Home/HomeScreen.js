@@ -1,11 +1,10 @@
-import React, { useLayoutEffect, useState, useEffect, useCallback } from "react";
+import React, { useLayoutEffect, useState, useEffect, useCallback, useMemo } from "react";
 import { 
-  FlatList, View, ActivityIndicator, Text, TouchableOpacity, Modal, StyleSheet,
-  RefreshControl 
+  FlatList, View, ActivityIndicator, StyleSheet, RefreshControl, 
+  Vibration, Text, Image, TouchableOpacity, Dimensions 
 } from "react-native";
-import { Ionicons } from '@expo/vector-icons';
-import { getAllRecipes, getAllCategories } from "../../data/MockDataAPI";
-import { differenceInDays, startOfDay } from 'date-fns'; 
+import { Accelerometer } from 'expo-sensors'; 
+import { getAllRecipes, getIngredientName } from "../../data/MockDataAPI"; 
 import { auth, db } from '../../firebase/firebaseConfig';
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -13,229 +12,273 @@ import * as Location from 'expo-location';
 
 import MenuImage from "../../components/MenuImage/MenuImage";
 import HeaderSection from "./HeaderSection";
-import CategorySection from "./CategorySection";
 import SuggestionModal from "./SuggestionModal";
 
+const { width } = Dimensions.get('window');
+const ITEM_WIDTH = (width - 40) / 2; 
+
 const WEATHER_API_KEY = '30c5dcb9ceb5311e00ff1de538706272';
-let hasShownPopupSession = false; 
+const OPENROUTER_API_KEY = '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';
 
-const moodConfig = {
-  happy:   { keywords: ['chanh', 'lemon', 'lime', 'chua', 'salad'], label: "Vui vẻ" },
-  sad:     { keywords: ['ngọt', 'sweet', 'chocolate', 'kem', 'trà sữa'], label: "Buồn chán" },
-  tired:   { keywords: ['cay', 'súp', 'cháo', 'gừng', 'nóng'], label: "Mệt mỏi" },
-  hungry:  { keywords: ['thịt', 'nướng', 'cơm', 'xôi', 'gà', 'bò'], label: "Đói meo" },
-  neutral: { keywords: [], label: "Xem tất cả" },
-};
-
-const timeFilters = {
-  morning:   { keywords: ['bún', 'phở', 'mì', 'xôi', 'bánh mì', 'trứng'], label: "☀️ Gợi ý bữa sáng" },
-  lunch:     { keywords: ['cơm', 'canh', 'kho', 'xào', 'chiên', 'mặn'], label: "🍚 Bữa trưa chắc bụng" },
-  afternoon: { keywords: ['chè', 'bánh', 'sinh tố', 'trà', 'vặt'], label: "🍰 Bữa xế chiều" },
-  dinner:    { keywords: ['lẩu', 'nướng', 'canh', 'salad', 'nhẹ'], label: "🌙 Bữa tối quây quân" }
-};
-
-export default function HomeScreen(props) {
-  const { navigation } = props;
-  const [groupedData, setGroupedData] = useState([]);
-  const [masterRecipes, setMasterRecipes] = useState([]);
-  const [masterCategories, setMasterCategories] = useState([]);
+export default function HomeScreen({ navigation }) {
+  const [displayedRecipes, setDisplayedRecipes] = useState([]); 
+  const [masterRecipes, setMasterRecipes] = useState([]);      
   const [bannerData, setBannerData] = useState([]);
+  
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   const [user, setUser] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [pantryItems, setPantryItems] = useState([]); 
   const [randomSuggestions, setRandomSuggestions] = useState([]);
   const [suggestionModalVisible, setSuggestionModalVisible] = useState(false);
-  const [mood, setMood] = useState('happy');
+  
+  const [mood, setMood] = useState('neutral');
   const [greeting, setGreeting] = useState("Chào bạn");
-  const [timeSession, setTimeSession] = useState("morning"); 
-  const [filterLabel, setFilterLabel] = useState(""); 
   const [weatherData, setWeatherData] = useState({ temp: '--', city: 'Đang định vị...' });
+  const [isShaking, setIsShaking] = useState(false);
+
+  // --- INDEXING DATA ---
+  const indexedRecipes = useMemo(() => {
+    const index = { happy: [], sad: [], tired: [], hungry: [] };
+    const keywords = {
+      sad: ["bánh", "kem", "chè", "ngọt", "trà sữa", "socola", "snack"],
+      happy: ["lẩu", "nướng", "pizza", "gà", "bia", "tiệc", "steak", "sườn"],
+      tired: ["cháo", "súp", "canh", "phở", "mì", "thanh đạm", "yến", "nước"],
+      hungry: ["cơm", "thịt", "bún", "bò", "gà", "kho", "xào", "nội tạng"]
+    };
+
+    masterRecipes.forEach(r => {
+      const title = r.title.toLowerCase();
+      if (keywords.sad.some(k => title.includes(k))) index.sad.push(r);
+      if (keywords.happy.some(k => title.includes(k))) index.happy.push(r);
+      if (keywords.tired.some(k => title.includes(k))) index.tired.push(r);
+      if (keywords.hungry.some(k => title.includes(k))) index.hungry.push(r);
+    });
+    return index;
+  }, [masterRecipes]);
+
+  const fastShuffle = (array) => {
+    let arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'TRANG CHỦ',
-      headerTitleStyle: { fontWeight: '900', letterSpacing: 1, fontSize: 14 },
+      headerTitleStyle: { fontWeight: '900', letterSpacing: 1, fontSize: 13 },
       headerLeft: () => <MenuImage onPress={() => navigation.openDrawer()} />,
-      headerRight: () => <View style={{ marginRight: 15 }} />,
-      headerStyle: { elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }
     });
-  }, []);
+  }, [navigation]);
 
-  // --- HÀM LẤY THỜI TIẾT (CHẠY RIÊNG) ---
-  const fetchWeather = async () => {
-    try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setWeatherData(prev => ({ ...prev, city: "Chưa cấp quyền vị trí" }));
-        return;
-      }
-      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      let address = await Location.reverseGeocodeAsync(location.coords);
-      let currentCity = address[0]?.city || address[0]?.subregion || "Việt Nam";
-      
-      const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${location.coords.latitude}&lon=${location.coords.longitude}&units=metric&lang=vi&appid=${WEATHER_API_KEY}`);
-      const data = await res.json();
-      if (data.main) setWeatherData({ temp: Math.round(data.main.temp), city: currentCity });
-    } catch (e) { 
-      console.log("Weather error:", e);
-      setWeatherData(prev => ({ ...prev, city: "Lỗi định vị" }));
-    }
-  };
-
-  // --- HÀM TẢI DỮ LIỆU CHÍNH (NHANH) ---
   const fetchData = async () => {
     try {
-      // 1. Logic thời gian cập nhật tức thì
-      const currentHour = new Date().getHours();
-      let session = "morning", greet = "Chào buổi sáng";
-      if (currentHour >= 4 && currentHour < 11) { session = "morning"; greet = "Chào buổi sáng"; }      
-      else if (currentHour >= 11 && currentHour < 14) { session = "lunch"; greet = "Chào buổi trưa"; }
-      else if (currentHour >= 14 && currentHour < 18) { session = "afternoon"; greet = "Chào buổi chiều"; }
-      else if (currentHour >= 18 || currentHour < 22) { session = "evening"; greet = "Chào buổi tối"; }      
-      else if (currentHour >= 22 || currentHour < 4) { session = "night"; greet = "Chào buổi tối"; }
-      setTimeSession(session);
-      setGreeting(greet);
-
-      // 2. Chỉ ưu tiên lấy Recipes & Categories
-      const [recipes, categories] = await Promise.all([getAllRecipes(), getAllCategories()]);
-      setMasterRecipes(recipes);
-      setMasterCategories(categories);
-      setBannerData([...recipes].sort(() => 0.5 - Math.random()).slice(0, 5));
-      setRandomSuggestions([...recipes].sort(() => 0.5 - Math.random()).slice(0, 3));
+      setIsRefreshing(true);
+      const recipes = await getAllRecipes();
+      setMasterRecipes(recipes || []);
+      // Không setDisplayedRecipes trực tiếp ở đây nữa, để useEffect xử lý theo mood
+      setBannerData(fastShuffle(recipes || []).slice(0, 5));
       
-      // 3. Gọi Weather chạy ngầm, không đợi nó
+      const hour = new Date().getHours();
+      setGreeting(hour < 12 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối");
       fetchWeather();
-      
-    } catch (e) {
-      console.error("Data error:", e);
-    } finally {
+    } catch (e) { console.log(e); } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   };
 
-  const onRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // --- LOGIC AUTH & PANTRY (CHẠY NGẦM) ---
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        const q = query(collection(db, "inventory"), where("email", "==", currentUser.email));
-        const unsubscribePantry = onSnapshot(q, (snapshot) => {
-          const today = startOfDay(new Date());
-          const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          const warningItems = items.filter(item => {
-            if (!item.expiryDate) return false;
-            let expDate = typeof item.expiryDate.toDate === 'function' ? item.expiryDate.toDate() : new Date(item.expiryDate);
-            return differenceInDays(startOfDay(expDate), today) <= 3; 
-          });
-          if (warningItems.length > 0 && !hasShownPopupSession) {
-            setModalVisible(true);
-            hasShownPopupSession = true; 
-          }
-        });
-        return () => unsubscribePantry();
-      }
-    });
-    return () => unsubscribeAuth();
-  }, []);
-
-  // --- LOGIC FILTER (CHẠY KHI DATA THAY ĐỔI) ---
+  // --- LOGIC QUAN TRỌNG: TỰ ĐỘNG LỌC KHI DATA HOẶC MOOD THAY ĐỔI ---
   useEffect(() => {
     if (masterRecipes.length === 0) return;
-    let keywords = mood !== 'neutral' ? moodConfig[mood].keywords : [];
-    if (!mood || mood === 'neutral') {
-      keywords = timeFilters[timeSession].keywords;
-      setFilterLabel(timeFilters[timeSession].label);
-    } else {
-      setFilterLabel("");
-    }
-    const filtered = masterRecipes.filter(item => {
-      const text = (item.title + " " + (item.description || "")).toLowerCase();
-      return keywords.some(key => text.includes(key.toLowerCase()));
-    });
-    const finalData = filtered.length > 0 ? filtered : masterRecipes;
-    const grouped = masterCategories.map(cat => ({
-      ...cat,
-      recipes: finalData.filter(r => r.categoryId === cat.id)
-    })).filter(c => c.recipes.length > 0);
-    setGroupedData(grouped);
-  }, [mood, timeSession, masterRecipes, masterCategories]);
 
-  const onPressRecipe = (item) => {
-    setSuggestionModalVisible(false);
-    navigation.navigate("Recipe", { item });
+    if (mood === 'neutral') {
+      setDisplayedRecipes(masterRecipes);
+    } else {
+      // Tự động áp dụng bộ lọc từ Index ngay cả khi vừa tải lại data
+      const filtered = indexedRecipes[mood] || [];
+      setDisplayedRecipes(filtered.length > 0 ? filtered : masterRecipes);
+    }
+  }, [masterRecipes, mood, indexedRecipes]);
+
+  const fetchWeather = async () => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${loc.coords.latitude}&lon=${loc.coords.longitude}&units=metric&lang=vi&appid=${WEATHER_API_KEY}`);
+      const data = await res.json();
+      if (data?.main) setWeatherData({ temp: Math.round(data.main.temp), city: data.name });
+    } catch (e) {}
   };
 
-  if (isLoading) return <View style={localStyles.center}><ActivityIndicator size="small" color="#000" /></View>;
+  useEffect(() => { fetchData(); }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+        const q = query(collection(db, "inventory"), where("email", "==", u.email));
+        return onSnapshot(q, (snap) => {
+          setPantryItems(snap.docs.map(doc => doc.data().name) || []);
+        });
+      }
+      setUser(null);
+      setPantryItems([]);
+    });
+    return unsub;
+  }, []);
+
+  const handleMoodFilter = async (selectedMood) => {
+    setMood(selectedMood); // Khi đổi mood, useEffect ở trên sẽ tự chạy lọc Offline trước
+
+    if (selectedMood === 'neutral') return;
+
+    // AI thẩm định chuyên sâu (chạy ngầm)
+    setIsLoadingAI(true);
+    const preFiltered = indexedRecipes[selectedMood] || [];
+    const titlesForAI = preFiltered.slice(0, 12).map(r => r.title).join(", ");
+    
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "google/gemma-2-9b-it:free",
+          messages: [{ role: "user", content: `JSON: { "recipes": ["Tên"] }. Chọn từ: [${titlesForAI}]` }]
+        })
+      });
+      const data = await response.json();
+      const res = data?.choices?.[0]?.message?.content;
+      
+      if (res) {
+        const cleanJson = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsedData = JSON.parse(cleanJson);
+        const aiRecipes = parsedData.recipes || [];
+
+        if (aiRecipes.length > 0) {
+          const finalFilter = masterRecipes.filter(r => 
+            aiRecipes.some(aiName => r.title.toLowerCase().includes(aiName.toLowerCase().trim()))
+          );
+          if (finalFilter.length > 0) setDisplayedRecipes(finalFilter);
+        }
+      }
+    } catch (e) { console.log("AI Offline fallback used"); }
+    setIsLoadingAI(false);
+  };
+
+  const handleShakeAI = useCallback(() => {
+    if (isShaking || masterRecipes.length === 0) return;
+    setIsShaking(true);
+    Vibration.vibrate(100);
+    setRandomSuggestions(fastShuffle(masterRecipes).slice(0, 3));
+    setSuggestionModalVisible(true);
+    setTimeout(() => setIsShaking(false), 2000);
+  }, [isShaking, masterRecipes]);
+
+  useEffect(() => {
+    let sub;
+    Accelerometer.isAvailableAsync().then(avail => {
+      if (avail) {
+        sub = Accelerometer.addListener(data => {
+          const acc = Math.sqrt(data.x**2 + data.y**2 + data.z**2);
+          if (acc > 2.8) handleShakeAI();
+        });
+      }
+    });
+    return () => sub && sub.remove();
+  }, [handleShakeAI]);
+
+  const renderGridItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.gridItemContainer} 
+      onPress={() => navigation.navigate("Recipe", { item })}
+    >
+      <Image source={{ uri: item.photo_url }} style={styles.gridImage} />
+      <View style={styles.gridTextContainer}>
+        <Text style={styles.gridTitle} numberOfLines={2}>{item.title}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" color="#000000" /></View>;
 
   return (
-    <View style={{ flex: 1, backgroundColor: 'white' }}>
+    <View style={{ flex: 1, backgroundColor: '#f9f9f9' }}>
+      {isLoadingAI && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="small" color="#000000" />
+          <Text style={styles.loadingText}>Đang tìm kiếm...</Text>
+        </View>
+      )}
+
       <FlatList
-        data={groupedData}
-        keyExtractor={(item) => `${item.id}`}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => <CategorySection item={item} onPressRecipe={onPressRecipe} />}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#000']} tintColor={'#000'} />
-        }
+        data={displayedRecipes}
+        keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+        renderItem={renderGridItem}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={fetchData} />}
         ListHeaderComponent={
           <View>
             <HeaderSection 
-                bannerData={bannerData} mood={mood} setMood={setMood}
-                weatherData={weatherData} greeting={greeting} user={user}
-                onPressRecipe={onPressRecipe} isUserScrolling={isUserScrolling}
-                onOpenSuggestion={() => setSuggestionModalVisible(true)}
-                moodConfig={moodConfig}
+              bannerData={bannerData} 
+              mood={mood} 
+              setMood={handleMoodFilter} 
+              weatherData={weatherData} 
+              greeting={greeting} 
+              user={user}
+              onPressRecipe={(r) => navigation.navigate("Recipe", { item: r })} 
+              onOpenSuggestion={() => {
+                setRandomSuggestions(fastShuffle(masterRecipes).slice(0, 3));
+                setSuggestionModalVisible(true);
+              }}
             />
-            {filterLabel !== "" && <Text style={localStyles.filterText}>{filterLabel}</Text>}
+            <View style={styles.sectionTitleContainer}>
+              <Text style={styles.sectionTitle}>
+                {mood === 'neutral' ? "Thực đơn hôm nay" : `Tìm thấy ${displayedRecipes.length} món dành cho bạn`}
+              </Text>
+            </View>
           </View>
         }
       />
 
-      <Modal animationType="fade" transparent visible={modalVisible}>
-        <View style={localStyles.modalOverlay}>
-          <View style={localStyles.modalContent}>
-            <View style={localStyles.iconCircle}><Ionicons name="time-outline" size={30} color="#000" /></View>
-            <Text style={localStyles.modalTitle}>CÓ THỰC PHẨM CẦN XỬ LÝ</Text>
-            <Text style={localStyles.modalSub}>Đừng để lãng phí nhé!</Text>
-            <TouchableOpacity style={localStyles.btnPrimary} onPress={() => { setModalVisible(false); navigation.navigate("Pantry"); }}>
-              <Text style={localStyles.btnText}>KIỂM TRA KHO BẾP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={{ marginTop: 15 }}>
-              <Text style={{ color: '#999', fontWeight: '700', fontSize: 12 }}>ĐỂ SAU</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       <SuggestionModal 
-        visible={suggestionModalVisible} onClose={() => setSuggestionModalVisible(false)}
-        suggestions={randomSuggestions} onPressRecipe={onPressRecipe}
+        visible={suggestionModalVisible} 
+        onClose={() => setSuggestionModalVisible(false)}
+        suggestions={randomSuggestions} 
+        onPressRecipe={(r) => { setSuggestionModalVisible(false); navigation.navigate("Recipe", { item: r }); }}
+        pantryItems={pantryItems} 
+        getIngredientName={getIngredientName} 
       />
     </View>
   );
 }
 
-const localStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  filterText: { paddingHorizontal: 20, marginTop: 15, fontWeight: '800', color: '#000', fontSize: 14, letterSpacing: 0.5 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '80%', backgroundColor: '#fff', borderRadius: 30, padding: 30, alignItems: 'center' },
-  iconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontWeight: '900', fontSize: 16, letterSpacing: 1, color: '#000' },
-  modalSub: { textAlign: 'center', color: '#666', marginTop: 10, lineHeight: 20, fontSize: 13 },
-  btnPrimary: { backgroundColor: '#000', width: '100%', padding: 16, borderRadius: 15, marginTop: 25, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 }
+  loadingOverlay: {
+    position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: 'white',
+    paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, zIndex: 99, 
+    flexDirection: 'row', alignItems: 'center', elevation: 4, borderWidth: 1, borderColor: '#eee'
+  },
+  loadingText: { marginLeft: 10, fontSize: 12, fontWeight: '600' },
+  listContent: { paddingBottom: 20 },
+  columnWrapper: { justifyContent: 'space-between', paddingHorizontal: 15 },
+  sectionTitleContainer: { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 18, marginTop: 25, marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
+  recipeCount: { fontSize: 14, color: '#838383', fontWeight: 'bold', marginLeft: 6 },
+  gridItemContainer: { width: ITEM_WIDTH, marginBottom: 15, backgroundColor: 'white', borderRadius: 18, elevation: 2, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0' },
+  gridImage: { width: '100%', height: ITEM_WIDTH },
+  gridTextContainer: { padding: 10, alignItems: 'center' },
+  gridTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: '#333' }
 });

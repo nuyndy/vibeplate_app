@@ -2,44 +2,30 @@
   "expo": {
     "name": "VibePlate",
     "slug": "vibeplate",
-    "description": "Ứng dụng chia sẻ công thức nấu ăn VibePlate",
-    "privacy": "public",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#ffffff"
-    },
-    "updates": {
-      "fallbackToCacheTimeout": 0
-    },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.vibeplate.app",
-      "googleServicesFile": "./GoogleService-Info.plist"
-    },
+    "newArchEnabled": false,
     "android": {
       "package": "com.vibeplate.app",
       "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.VIBRATE",
+        "android.permission.BODY_SENSORS" 
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "newArchEnabled": true,
     "plugins": [
       "expo-asset",
       "@react-native-google-signin/google-signin",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "VibePlate cần sử dụng cảm biến để nhận diện hành động lắc máy chọn món."
+        }
+      ]
     ]
   }
 }
