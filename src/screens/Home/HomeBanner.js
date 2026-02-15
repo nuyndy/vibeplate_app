@@ -1,91 +1,132 @@
-import React, { useState, useEffect, useRef } from "react";
-import { ScrollView, View, Text, Image, TouchableHighlight, Dimensions } from "react-native";
-import styles from "./styles"; 
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { ScrollView, View, Image, TouchableHighlight, Dimensions, Text, StyleSheet } from "react-native";
 
 const { width: viewportWidth } = Dimensions.get("window");
+const CARD_WIDTH = viewportWidth - 30; 
+const CARD_MARGIN = 15;
 
-// 1. Nhận thêm prop `isUserScrolling` từ cha
-function HomeBanner({ bannerData, onPressRecipe, isUserScrolling }) {
-  const [bannerIndex, setBannerIndex] = useState(0);
+function HomeBanner({ bannerData, onPressRecipe, isUserScrolling, mood }) {
   const bannerRef = useRef(null);
+  const currentIndexRef = useRef(0);
 
   useEffect(() => {
-    // 2. Kiểm tra an toàn: Nếu không có data HOẶC user đang cuộn -> Dừng ngay
-    if (!bannerData || bannerData.length === 0 || isUserScrolling) {
-      return; 
+    if (bannerRef.current) {
+      bannerRef.current.scrollTo({ x: 0, y: 0, animated: true });
     }
+    currentIndexRef.current = 0;
+  }, [bannerData]);
+
+  useEffect(() => {
+    if (!bannerData || bannerData.length <= 1 || isUserScrolling) return;
 
     const interval = setInterval(() => {
-      setBannerIndex(prevIndex => {
-        // Logic tính toán index tiếp theo
-        let nextIndex = prevIndex + 1;
-        if (nextIndex >= bannerData.length) {
-          nextIndex = 0;
-        }
-        
-        // Thực hiện cuộn banner
-        if (bannerRef.current) {
-           bannerRef.current.scrollTo({
-              x: nextIndex * viewportWidth,
-              y: 0,
-              animated: true,
-           });
-        }
-        return nextIndex;
-      });
-    }, 3000); 
+      let nextIndex = currentIndexRef.current + 1;
+      if (nextIndex >= bannerData.length) nextIndex = 0;
+      
+      if (bannerRef.current) {
+        bannerRef.current.scrollTo({
+          x: nextIndex * viewportWidth,
+          y: 0,
+          animated: true,
+        });
+        currentIndexRef.current = nextIndex;
+      }
+    }, 4000);
 
-    // Dọn dẹp interval khi component unmount hoặc khi dependency thay đổi
     return () => clearInterval(interval);
-
-  // 3. Thêm isUserScrolling vào dependency để useEffect chạy lại khi trạng thái này thay đổi
   }, [bannerData, isUserScrolling]);
 
-  // Hàm xử lý khi người dùng lướt banner bằng tay
-  const handleScrollEnd = (event) => {
+  const handleScrollEnd = useCallback((event) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffsetX / viewportWidth);
-    setBannerIndex(index);
-  };
+    currentIndexRef.current = index;
+  }, []);
+
+  if (!bannerData || bannerData.length === 0) return null;
 
   return (
     <View style={styles.headerContainer}>
-        
         <ScrollView
           ref={bannerRef}
-          horizontal={true}
-          pagingEnabled={true} 
+          horizontal
+          pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleScrollEnd}
           scrollEventThrottle={16}
+          decelerationRate="fast"
         >
           {bannerData.map((item, index) => (
-            <View key={index} style={styles.bannerWrapper}> 
+            <View key={item.id || `banner-${index}`} style={styles.bannerWrapper}> 
               <TouchableHighlight 
                 underlayColor="transparent" 
                 onPress={() => onPressRecipe(item)}
               >
-                <View style={styles.bannerContainer}>
-                  <Image style={styles.bannerPhoto} source={{ uri: item.photo_url }} />
+                <View style={styles.floatingCard}>
+                  <Image 
+                    style={styles.bannerPhoto} 
+                    source={{ uri: item.photo_url }} 
+                    resizeMode="cover"
+                  />
+                  <View style={styles.textOverlay}>
+                    <Text style={styles.itemTitle}>{item.title}</Text>
+                    {mood && mood !== 'neutral' && (
+                      <View style={styles.moodBadge}>
+                        <Text style={styles.moodText}>✨ Phù hợp với bạn</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               </TouchableHighlight>
             </View>
           ))}
         </ScrollView>
-        
-        <View style={styles.paginationContainer}>
-           {bannerData.map((_, i) => (
-              <View 
-                key={i} 
-                style={[
-                  styles.paginationDot, 
-                  { backgroundColor: i === bannerIndex ? '#000000' : '#ddd' }
-                ]} 
-              />
-           ))}
-        </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  headerContainer: { marginTop: 10 },
+  bannerWrapper: { width: viewportWidth, paddingHorizontal: CARD_MARGIN, paddingVertical: 10 },
+  floatingCard: {
+    width: CARD_WIDTH,
+    height: 210,
+    borderRadius: 30,
+    backgroundColor: '#FFF',
+    overflow: 'hidden',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  bannerPhoto: { width: '100%', height: '100%' },
+  textOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 18,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    // Căn giữa nội dung bên trong Overlay
+    alignItems: 'center', 
+    justifyContent: 'center',
+  },
+  itemTitle: { 
+    color: 'white', 
+    fontWeight: 'bold', 
+    fontSize: 18,
+    // Căn giữa văn bản nếu tiêu đề dài xuống dòng
+    textAlign: 'center' 
+  },
+  moodBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    // Bỏ alignSelf: 'flex-start' để badge tự căn giữa theo textOverlay
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 6,
+  },
+  moodText: { color: '#FFD700', fontSize: 11, fontWeight: '700' }
+});
 
 export default React.memo(HomeBanner);

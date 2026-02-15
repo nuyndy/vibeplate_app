@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from 'firebase/firestore';
 import { getAnalytics, isSupported } from "firebase/analytics"; 
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
+// 1. Thêm getAuth vào import
+import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
@@ -15,6 +16,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
 let analytics;
 isSupported().then((supported) => {
   if (supported) {
@@ -25,8 +27,17 @@ isSupported().then((supported) => {
 });
 
 const db = getFirestore(app);
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
-});
+
+// 2. Sửa đoạn khởi tạo Auth để tránh lỗi "already-initialized"
+let auth;
+try {
+  // Cố gắng khởi tạo mới với Persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+  });
+} catch (error) {
+  // Nếu đã khởi tạo rồi (lỗi already-initialized), thì lấy instance cũ
+  auth = getAuth(app);
+}
 
 export { db, auth, analytics };

@@ -10,7 +10,7 @@ import {
   StatusBar, 
   Alert, 
   Dimensions,
-  RefreshControl // <--- Thêm RefreshControl
+  RefreshControl
 } from "react-native";
 import { 
   collection, 
@@ -34,6 +34,9 @@ import { auth, db } from '../../firebase/firebaseConfig';
 
 const { width: viewportWidth, height: viewportHeight } = Dimensions.get("window");
 
+// MÃ API KEY
+const OPENROUTER_API_KEY = "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"; 
+
 export default function RecipeScreen(props) {
   const { navigation, route } = props;
   const item = route.params?.item; 
@@ -44,7 +47,11 @@ export default function RecipeScreen(props) {
   const [isLoadingIngredients, setIsLoadingIngredients] = useState(true);
   const [isSaved, setIsSaved] = useState(false); 
   const [pantryData, setPantryData] = useState([]);
-  const [isRefreshing, setIsRefreshing] = useState(false); // <--- State cho reload
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // 🔥 STATE CHO AI TÍNH CALO
+  const [aiCalories, setAiCalories] = useState(null);
+  const [isCalculatingCalories, setIsCalculatingCalories] = useState(false);
 
   const slider1Ref = useRef(null);
   const progress = useSharedValue(0);
@@ -55,7 +62,6 @@ export default function RecipeScreen(props) {
   const loadAllData = useCallback(async () => {
     if (!item) return;
     try {
-      // 1. Tải Category & Nguyên liệu song song
       const [catData, ingredientsDetail] = await Promise.all([
         item.categoryId ? getCategoryById(item.categoryId) : Promise.resolve(null),
         item.ingredients ? getAllIngredients(item.ingredients) : Promise.resolve([])
@@ -64,7 +70,6 @@ export default function RecipeScreen(props) {
       setActiveCategory(catData);
       setIngredientsData(ingredientsDetail);
 
-      // 2. Kiểm tra Favorite
       const user = auth.currentUser;
       if (user) {
         const docId = `${user.uid}_${item.recipeId}`;
@@ -75,11 +80,10 @@ export default function RecipeScreen(props) {
       console.error("Lỗi tải dữ liệu:", error);
     } finally {
       setIsLoadingIngredients(false);
-      setIsRefreshing(false); // <--- Tắt xoay reload
+      setIsRefreshing(false);
     }
   }, [item]);
 
-  // --- 1. Pull to Refresh ---
   const onRefresh = () => {
     setIsRefreshing(true);
     loadAllData();
@@ -89,7 +93,7 @@ export default function RecipeScreen(props) {
     loadAllData();
   }, [loadAllData]);
 
-  // --- 2. Realtime Pantry (Theo dõi kho bếp trực tiếp) ---
+  // --- REALTIME PANTRY ---
   useEffect(() => {
     const user = auth.currentUser;
     if (user && user.email) {
@@ -102,6 +106,71 @@ export default function RecipeScreen(props) {
     }
   }, []);
 
+  // 🤖 GỌI AI ĐỂ TÍNH CALO
+  const calculateCaloriesWithAI = useCallback(async () => {
+    if (!ingredientsData || ingredientsData.length === 0) return;
+    
+    setIsCalculatingCalories(true);
+    try {
+      // 1. Gộp mảng nguyên liệu thành 1 chuỗi văn bản (VD: "500g thịt bò, 2 muỗng đường")
+      const ingredientsListStr = ingredientsData.map(ingArray => {
+        const data = ingArray[0];
+        const qty = ingArray[1];
+        return `${qty} ${data?.name || ''}`;
+      }).join(", ");
+
+      const servingsCount = item.servings || 2;
+
+      // 2. Viết Prompt gắt gao ép AI chỉ nhả ra số
+      const prompt = `Tính tổng lượng Calo (Kcal) xấp xỉ cho danh sách nguyên liệu nấu ăn sau: ${ingredientsListStr}.
+      Sau đó chia cho ${servingsCount} người ăn.
+      Tuyệt đối chỉ trả về 1 con số nguyên duy nhất (là lượng Kcal cho 1 người ăn).
+      Không thêm chữ Kcal, không giải thích, không dấu câu.`;
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "http://localhost:8081",
+          "X-Title": "RecipeApp",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          models: [
+            "google/gemma-2-9b-it:free",
+            "mistralai/mistral-7b-instruct:free",
+            "openrouter/free"
+          ],
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      const data = await response.json();
+      const aiResponse = data.choices?.[0]?.message?.content?.trim();
+      
+      // 3. Dùng Regex lọc lấy đúng con số từ kết quả AI trả về (phòng khi AI nói lan man)
+      const match = aiResponse?.match(/\d+/);
+      if (match) {
+        setAiCalories(match[0]);
+      } else {
+        setAiCalories("--");
+      }
+    } catch (error) {
+      console.error("Lỗi AI tính calo:", error);
+      setAiCalories("--");
+    } finally {
+      setIsCalculatingCalories(false);
+    }
+  }, [ingredientsData, item.servings]);
+
+  // Gọi hàm AI tự động ngay khi dữ liệu nguyên liệu vừa tải xong
+  useEffect(() => {
+    if (ingredientsData.length > 0) {
+      calculateCaloriesWithAI();
+    }
+  }, [ingredientsData, calculateCaloriesWithAI]);
+
+  // --- CÁC HÀM XỬ LÝ SỰ KIỆN KHÁC ---
   const handleSaveRecipe = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -207,22 +276,23 @@ export default function RecipeScreen(props) {
     const isAvailable = checkIngredientAvailable(data.name, pantryData);
 
     return (
-        <TouchableOpacity key={index} style={customStyles.ingredientItemContainer} onPress={() => navigation.navigate("Ingredient", { ingredient: data })}>
-            <View style={[
-                customStyles.ingredientCircle, 
-                // VIỀN XANH LÁ KHI CÓ SẴN
-                isAvailable ? { borderColor: '#32ba7c', borderWidth: 2 } : { borderColor: '#F0F0F0', borderWidth: 1 }
-            ]}>
-                <Image source={{ uri: data.photo_url || 'https://cdn-icons-png.flaticon.com/512/706/706164.png' }} style={customStyles.ingredientImage} />
-                {isAvailable && (
-                    <View style={customStyles.statusBadge}>
-                         <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/190/190411.png'}} style={{width: 10, height: 10}} />
-                    </View>
-                )}
-            </View>
+        <View key={index} style={customStyles.ingredientItemContainer}>
+            <TouchableOpacity onPress={() => navigation.navigate("Ingredient", { ingredient: data })}>
+                <View style={[
+                    customStyles.ingredientCircle, 
+                    isAvailable ? { borderColor: '#32ba7c', borderWidth: 2 } : { borderColor: '#F0F0F0', borderWidth: 1 }
+                ]}>
+                    <Image source={{ uri: data.photo_url || 'https://cdn-icons-png.flaticon.com/512/706/706164.png' }} style={customStyles.ingredientImage} />
+                    {isAvailable && (
+                        <View style={customStyles.statusBadge}>
+                             <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/190/190411.png'}} style={{width: 10, height: 10, tintColor: 'white'}} />
+                        </View>
+                    )}
+                </View>
+            </TouchableOpacity>
             <Text style={[customStyles.ingredientNameText, isAvailable && { fontWeight: '800', color: '#32ba7c' }]} numberOfLines={2}>{data.name}</Text>
             <Text style={customStyles.ingredientQtyText}>{quantity}</Text>
-        </TouchableOpacity>
+        </View>
     );
   };
 
@@ -236,9 +306,9 @@ export default function RecipeScreen(props) {
             <RefreshControl 
                 refreshing={isRefreshing} 
                 onRefresh={onRefresh} 
-                tintColor="#000"   // Màu icon cho iOS
-                colors={['#000']}  // Màu icon cho Android (Mảng màu)
-                progressBackgroundColor="#FFF" // Nền của vòng xoay (Android)
+                tintColor="#000"   
+                colors={['#000']}  
+                progressBackgroundColor="#FFF" 
             />
         }
       >
@@ -264,8 +334,27 @@ export default function RecipeScreen(props) {
           <Text style={styles.recipeTitle}>{item.title}</Text>
           <View style={styles.metaContainer}>
             <TouchableOpacity style={styles.categoryTag}><Text style={styles.categoryText}>{activeCategory?.name.toUpperCase() || "LOADING..."}</Text></TouchableOpacity>
-            <View style={styles.metaItem}><Image source={require("../../../assets/icons/time.png")} style={styles.metaIcon} /><Text style={styles.metaText}>{item.time} phút</Text></View>
-            <View style={[styles.metaItem, { marginLeft: 15 }]}><Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/1250/1250689.png'}} style={styles.metaIcon} /><Text style={styles.metaText}>{item.servings || "2"} người</Text></View>
+            
+            <View style={styles.metaItem}>
+              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/2088/2088617.png'}} style={styles.metaIcon} />
+              <Text style={styles.metaText}>{item.time} phút</Text>
+            </View>
+            
+            <View style={[styles.metaItem, { marginLeft: 15 }]}>
+              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/1250/1250689.png'}} style={styles.metaIcon} />
+              <Text style={styles.metaText}>{item.servings || "2"} người</Text>
+            </View>
+
+            {/* 🔥 KHU VỰC HIỂN THỊ CALO DO AI TÍNH */}
+            <View style={[styles.metaItem, { marginLeft: 15 }]}>
+              <Text style={{ fontSize: 14, marginRight: 4 }}>🔥</Text>
+              {isCalculatingCalories ? (
+                <ActivityIndicator size="small" color="#ff9800" />
+              ) : (
+                <Text style={styles.metaText}>{aiCalories ? `${aiCalories} Kcal` : '-- Kcal'}</Text>
+              )}
+            </View>
+
           </View>
           <View style={styles.divider} />
 

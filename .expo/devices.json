@@ -1,8 +1,13 @@
 {
   "devices": [
     {
+<<<<<<< HEAD
       "installationId": "e62af9a3-a0a2-4e33-b627-409364251594",
       "lastUsed": 1771149472933
+=======
+      "installationId": "c7cea143-b7a7-4039-802f-043d8e3ef3e6",
+      "lastUsed": 1771143679750
+>>>>>>> main
     },
     {
       "installationId": "c7cea143-b7a7-4039-802f-043d8e3ef3e6",
