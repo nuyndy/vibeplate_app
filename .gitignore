@@ -59,6 +59,9 @@ typings/
 
 # next.js build output
 .next
+
+# Expo cache/config files
+.expo/
 .expo/packager-info.json
 .expo/settings.json
 package-lock.json
