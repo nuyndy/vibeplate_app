@@ -9,7 +9,7 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.VIBRATE",
-        "android.permission.BODY_SENSORS"
+        "android.permission.BODY_SENSORS" 
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -24,21 +24,6 @@
         "expo-sensors",
         {
           "motionPermission": "VibePlate cần sử dụng cảm biến để nhận diện hành động lắc máy chọn món."
-        }
-      ],
-      "expo-speech-recognition",
-      [
-        "react-native-permissions",
-        {
-          "iosPermissions": [
-            "Microphone",
-            "SpeechRecognition",
-            "Camera"
-          ],
-          "androidPermissions": [
-            "android.permission.RECORD_AUDIO",
-            "android.permission.CAMERA"
-          ]
         }
       ]
     ]

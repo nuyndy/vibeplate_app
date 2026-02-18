@@ -6,8 +6,7 @@ import {
 import { db, auth } from '../../firebase/firebaseConfig'; 
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  SafeAreaView, TextInput, Alert, Keyboard, Modal, 
-  ActivityIndicator, RefreshControl, SectionList // 👈 Đổi FlatList thành SectionList
+  SafeAreaView, TextInput, FlatList, Alert, Keyboard, Modal, ActivityIndicator, RefreshControl
 } from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
 
@@ -84,90 +83,44 @@ export default function ShoppingListScreen({ navigation }) {
     loadData();
   };
 
-  // --- TÁCH DỮ LIỆU THÀNH 2 NHÓM CHO SECTION LIST ---
-  // Sử dụng useMemo để tối ưu, chỉ tính toán lại khi items thay đổi
-  const missingIngredients = useMemo(() => {
-    return items.filter(item => item.type === 'missing_from_recipe');
-  }, [items]);
-
-  const normalItems = useMemo(() => {
-    return items.filter(item => item.type !== 'missing_from_recipe');
-  }, [items]);
-
-  // Cấu trúc data để truyền vào SectionList
-  const sections = useMemo(() => {
-    const groupedByRecipe = {}; // Object để nhóm: { "Phở bò": [item1, item2], "Bún chả": [item3] }
-    const manualItems = [];     // Danh sách đi chợ chung (tự thêm tay)
-
-    items.forEach((item) => {
-      // Nếu là nguyên liệu từ công thức VÀ có tên món nguồn
-      if (item.type === 'missing_from_recipe' && item.sourceRecipe) {
-        if (!groupedByRecipe[item.sourceRecipe]) {
-          groupedByRecipe[item.sourceRecipe] = [];
-        }
-        groupedByRecipe[item.sourceRecipe].push(item);
-      } 
-      // Các trường hợp còn lại (tự thêm tay hoặc dữ liệu cũ không có sourceRecipe)
-      else {
-        manualItems.push(item);
-      }
-    });
-    // 1. Chuyển đổi Object nhóm thành mảng Section
-    const result = Object.keys(groupedByRecipe).map((recipeName) => ({
-      title: `Nguyên liệu cho món: ${recipeName}`, // Tiêu đề section
-      data: groupedByRecipe[recipeName]
-    }));
-    /// 2. Thêm nhóm "Danh sách chung" vào cuối cùng
-    // Luôn hiển thị nhóm này để người dùng thêm đồ linh tinh
-    result.push({ 
-      title: 'Danh sách đi chợ chung', 
-      data: manualItems 
-    });
-
-    return result;
-  }, [items]);
-
   // --- 2. HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerTransparent: true, 
-      headerTitle: "Giỏ đi chợ", 
-      headerTintColor: COLORS.textMain,
+      headerTransparent: true, headerTitle: "Giỏ đi chợ", headerTintColor: COLORS.textMain,
       headerLeft: () => (<MenuImage onPress={() => navigation.openDrawer()} />),
-      // ĐÃ SỬA LẠI KHÚC NÀY 👇
-      headerRight: () => {
-        if (items.length > 0) {
-          return (
-            <TouchableOpacity style={{ marginRight: 18 }} onPress={handleClearAll}>
-              <Text style={{ color: '#EF4444', fontWeight: '700' }}>DỌN GIỎ</Text>
-            </TouchableOpacity>
-          );
-        }
-        return null; // Trả về null nếu giỏ hàng trống, tránh lỗi render
-      },
+      headerRight: () => (
+        items.length > 0 && (
+          <TouchableOpacity style={{ marginRight: 18 }} onPress={handleClearAll}>
+            <Text style={{ color: '#EF4444', fontWeight: '700' }}>DỌN GIỎ</Text>
+          </TouchableOpacity>
+        )
+      ),
     });
   }, [navigation, items]);
 
-  // --- 3. LOGIC TICK MƯỢT MÀ ---
+  // --- 3. LOGIC TICK MƯỢT MÀ (OPTIMISTIC + BATCH) ---
   const toggleItemStatus = async (item) => {
-    const oldItems = [...items]; 
+    const oldItems = [...items]; // Backup dữ liệu cũ để hoàn tác nếu lỗi
     const newStatus = item.status === 'pending' ? 'completed' : 'pending';
 
+    // BƯỚC 1: Cập nhật UI ngay lập tức
     setItems(prev => prev.map(i => i.itemId === item.itemId ? { ...i, status: newStatus } : i));
 
     try {
       const batch = writeBatch(db);
       const itemRef = doc(db, 'shoppingList', item.itemId);
 
+      // Cập nhật trạng thái trong Shopping List
       batch.update(itemRef, {
         status: newStatus,
         updatedAt: new Date()
       });
 
+      // Nếu tick là Hoàn thành -> Thêm vào kho (Inventory)
       if (newStatus === 'completed') {
-        const inventoryRef = doc(collection(db, 'inventory')); 
+        const inventoryRef = doc(collection(db, 'inventory')); // Tạo ID tự động
         const expiry = new Date();
-        expiry.setDate(expiry.getDate() + 3); 
+        expiry.setDate(expiry.getDate() + 3); // Mặc định 3 ngày
 
         batch.set(inventoryRef, {
           email: auth.currentUser.email,
@@ -180,10 +133,10 @@ export default function ShoppingListScreen({ navigation }) {
         });
       }
 
-      await batch.commit(); 
+      await batch.commit(); // Gửi cả 2 lệnh đi cùng lúc
     } catch (error) {
       console.log("Lỗi tick:", error);
-      setItems(oldItems); 
+      setItems(oldItems); // Hoàn tác UI nếu Firebase lỗi
       Alert.alert("Lỗi", "Không thể cập nhật. Vui lòng kiểm tra kết nối.");
     }
   };
@@ -195,12 +148,11 @@ export default function ShoppingListScreen({ navigation }) {
 
     try {
       await addDoc(collection(db, 'shoppingList'), {
-        email: currentUser.email,
+        email: currentUser.email, // Dùng email cho đồng bộ với Query
         name: newItemName,
         quantity: Number(newItemQuantity) || 1,
         unit: selectedUnit,
         status: 'pending',
-        type: 'manual', // 👈 Đánh dấu đây là món được thêm thủ công
         updatedAt: new Date()
       });
       setNewItemName(''); setNewItemQuantity(''); setSelectedUnit('kg');
@@ -296,27 +248,14 @@ export default function ShoppingListScreen({ navigation }) {
       </View>
 
       {loading && !refreshing ? <ActivityIndicator size="large" color={COLORS.primary} style={{marginTop: 50}} /> : 
-          <SectionList // 👈 Dùng SectionList thay thế
-            sections={sections}
-            keyExtractor={(item) => item.itemId}
-            renderItem={renderItem}
-            renderSectionHeader={({ section: { title } }) => (
-              <View style={{ 
-                  backgroundColor: '#E8F5E9', 
-                  paddingVertical: 8, 
-                  paddingHorizontal: 16, 
-                  borderLeftWidth: 4, 
-                  borderLeftColor: COLORS.primary,
-                  marginTop: 10
-              }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.primary }}>
-                  {title}
-                </Text>
-              </View>
-            )}
-            contentContainerStyle={{ paddingBottom: 100 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          <FlatList 
+            data={items} 
+            keyExtractor={item => item.itemId} 
+            renderItem={renderItem} 
+            contentContainerStyle={styles.listContent} 
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
             ListEmptyComponent={() => <View style={styles.emptyContainer}><Text style={styles.emptyText}>Danh sách đang trống</Text></View>} 
+            removeClippedSubviews={true} // Tối ưu list dài
           />
       }
         
@@ -364,16 +303,6 @@ const styles = StyleSheet.create({
   unitText: { fontSize: 13, fontWeight: '700' },
   addBtn: { width: 40, height: 40, backgroundColor: COLORS.primary, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   listContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 },
-  
-  // 👈 Thêm style cho Tiêu đề Section
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.textMain,
-    marginBottom: 12,
-    marginTop: 15,
-  },
-
   itemCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, backgroundColor: COLORS.card, padding: 15, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3.84, elevation: 2 },
   itemCardBought: { backgroundColor: '#F9FAFB', opacity: 0.8 },
   checkBox: { width: 24, height: 24, borderWidth: 2, borderColor: COLORS.primary, borderRadius: 8, marginRight: 15, justifyContent: 'center', alignItems: 'center' },
