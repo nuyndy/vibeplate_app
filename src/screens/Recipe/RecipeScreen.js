@@ -94,13 +94,7 @@ export default function RecipeScreen(props) {
   const progress = useSharedValue(0);
   const chatScrollRef = useRef(null); 
   const isMounted = useRef(true);
-  // THÊM 2 DÒNG REF NÀY VÀO ĐÂY:
-  const isCookingModeRef = useRef(false);
-  const isAiAnsweringRef = useRef(false);
 
-  // Cập nhật ref mỗi khi state thay đổi
-  useEffect(() => { isCookingModeRef.current = isCookingMode; }, [isCookingMode]);
-  useEffect(() => { isAiAnsweringRef.current = isAiAnswering; }, [isAiAnswering]);
   useEffect(() => {
     return () => { isMounted.current = false; };
   }, []);
