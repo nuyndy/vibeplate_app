@@ -106,7 +106,7 @@ export const generateRecipeJSON = async (userRequest) => {
          + Bạn được phép tự sáng tạo công thức mới.
          + BẮT BUỘC gán \`recipeId\` = "none"
          + BẮT BUỘC gán \`photo_url\` = ""
-         + \`warningMessage\` báo: "Mình đã tạo một công thức cho bạn đây ^^!"
+         + \`warningMessage\` báo: "Hệ thống chưa có món này, nhưng mình đã tự sáng tạo một công thức riêng kết hợp với đồ trong tủ lạnh cho bạn đây!"
     3. KHÔNG dùng dấu **. Trả về đúng TÊN nguyên liệu bằng chữ.
 
     [FORMAT JSON]:
@@ -135,11 +135,14 @@ export const generateRecipeJSON = async (userRequest) => {
     let resContent = data.choices[0].message.content;
     const parsed = JSON.parse(resContent.substring(resContent.indexOf('{'), resContent.lastIndexOf('}') + 1));
 
-    // LOG RA TERMINAL 
-    console.log("AI TRẢ VỀ DỮ LIỆU JSON CHO MÓN:", userRequest);
+    // ========================================================
+    // LOG RA TERMINAL ĐỂ BẠN KIỂM TRA
+    console.log("\n===========================================");
+    console.log("🤖 AI TRẢ VỀ DỮ LIỆU JSON CHO MÓN:", userRequest);
     console.log("Trạng thái nguồn:", parsed.recipeId === "none" ? "AI TỰ NGHĨ" : `TỪ DATABASE (ID: ${parsed.recipeId})`);
     console.log(JSON.stringify(parsed, null, 2));
     console.log("===========================================\n");
+    // ========================================================
 
     // Xử lý logic photo_url: Nếu AI tự nghĩ (none) thì ép bằng null để không lỗi giao diện
     const finalPhotoUrl = (parsed.recipeId !== "none" && parsed.photo_url && parsed.photo_url !== "") 
