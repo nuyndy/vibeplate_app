@@ -1,7 +1,8 @@
-import React, { useLayoutEffect, useState, useEffect, useCallback, useMemo } from "react";
+import React, { useLayoutEffect, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { 
   FlatList, View, ActivityIndicator, StyleSheet, RefreshControl, 
-  Vibration, Text, Image, TouchableOpacity, Dimensions 
+  Vibration, Text, Image, TouchableOpacity, Dimensions, Modal,
+  Animated 
 } from "react-native";
 import { Accelerometer } from 'expo-sensors'; 
 import { getAllRecipes, getIngredientName } from "../../data/MockDataAPI"; 
@@ -19,37 +20,56 @@ const { width } = Dimensions.get('window');
 const ITEM_WIDTH = (width - 40) / 2; 
 
 const WEATHER_API_KEY = '30c5dcb9ceb5311e00ff1de538706272';
-const OPENROUTER_API_KEY = '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';
+let hasShownPantryAlertGlobal = false;
 
 export default function HomeScreen({ navigation }) {
   const [displayedRecipes, setDisplayedRecipes] = useState([]); 
   const [masterRecipes, setMasterRecipes] = useState([]);      
   const [bannerData, setBannerData] = useState([]);
-  
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
   const [user, setUser] = useState(null);
   const [pantryItems, setPantryItems] = useState([]); 
   const [randomSuggestions, setRandomSuggestions] = useState([]);
   const [suggestionModalVisible, setSuggestionModalVisible] = useState(false);
-  
   const [mood, setMood] = useState('neutral');
   const [greeting, setGreeting] = useState("Chào bạn");
   const [weatherData, setWeatherData] = useState({ temp: '--', city: 'Đang định vị...' });
   const [isShaking, setIsShaking] = useState(false);
+  const [pantryAlertVisible, setPantryAlertVisible] = useState(false);
+
+  // --- LOGIC HIỆU ỨNG NHẢY CỦA FAB AI (ANIMATION) ---
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const bounce = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateY, {
+          toValue: -8, 
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: 0, 
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    bounce.start();
+    return () => bounce.stop();
+  }, []);
+
   useEffect(() => {
     const loadSavedMood = async () => {
       try {
         const savedMood = await AsyncStorage.getItem('user_current_mood');
         if (savedMood) setMood(savedMood);
-      } catch (e) { console.log("Lỗi load mood:", e); }
+      } catch (e) { console.log(e); }
     };
     loadSavedMood();
   }, []);
 
-  // --- INDEXING DATA ---
   const indexedRecipes = useMemo(() => {
     const index = { happy: [], sad: [], tired: [], hungry: [] };
     const keywords = {
@@ -58,7 +78,6 @@ export default function HomeScreen({ navigation }) {
       tired: ["cháo", "súp", "canh", "phở", "mì", "thanh đạm", "yến", "nước"],
       hungry: ["cơm", "thịt", "bún", "bò", "gà", "kho", "xào", "nội tạng"]
     };
-
     masterRecipes.forEach(r => {
       const title = r.title.toLowerCase();
       if (keywords.sad.some(k => title.includes(k))) index.sad.push(r);
@@ -91,9 +110,7 @@ export default function HomeScreen({ navigation }) {
       setIsRefreshing(true);
       const recipes = await getAllRecipes();
       setMasterRecipes(recipes || []);
-      // Không setDisplayedRecipes trực tiếp ở đây nữa, để useEffect xử lý theo mood
       setBannerData(fastShuffle(recipes || []).slice(0, 5));
-      
       const hour = new Date().getHours();
       setGreeting(hour < 12 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối");
       fetchWeather();
@@ -103,14 +120,11 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // --- LOGIC QUAN TRỌNG: TỰ ĐỘNG LỌC KHI DATA HOẶC MOOD THAY ĐỔI ---
   useEffect(() => {
     if (masterRecipes.length === 0) return;
-
     if (mood === 'neutral') {
       setDisplayedRecipes(masterRecipes);
     } else {
-      // Tự động áp dụng bộ lọc từ Index ngay cả khi vừa tải lại data
       const filtered = indexedRecipes[mood] || [];
       setDisplayedRecipes(filtered.length > 0 ? filtered : masterRecipes);
     }
@@ -129,13 +143,32 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
+  // --- LOGIC KIỂM TRA ĐỒ HẾT HẠN GẤP ---
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUser(u);
         const q = query(collection(db, "inventory"), where("email", "==", u.email));
         return onSnapshot(q, (snap) => {
-          setPantryItems(snap.docs.map(doc => doc.data().name) || []);
+          const allItems = snap.docs.map(doc => doc.data()) || [];
+          setPantryItems(allItems.map(i => i.name)); 
+
+          // Logic lọc đồ gấp: Cận hạn trong 3 ngày hoặc đã hết hạn
+          const now = new Date();
+          const limitDate = new Date();
+          limitDate.setDate(now.getDate() + 3);
+
+          const urgentItems = allItems.filter(item => {
+            if (!item.expiryDate) return false;
+            const expiry = item.expiryDate.toDate ? item.expiryDate.toDate() : new Date(item.expiryDate);
+            return expiry <= limitDate;
+          });
+
+          // Chỉ hiện thông báo nếu có ít nhất 1 món gấp
+          if (!hasShownPantryAlertGlobal && urgentItems.length > 0) {
+            hasShownPantryAlertGlobal = true; 
+            setTimeout(() => setPantryAlertVisible(true), 2000); 
+          }
         });
       }
       setUser(null);
@@ -145,48 +178,8 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const handleMoodFilter = async (selectedMood) => {
-    setMood(selectedMood); // Khi đổi mood, useEffect ở trên sẽ tự chạy lọc Offline trước
-    
-    try {
-        await AsyncStorage.setItem('user_current_mood', selectedMood);
-    } catch (e) { console.log("Lỗi lưu mood:", e); }
-
-    if (selectedMood === 'neutral') return;
-
-    // AI thẩm định chuyên sâu (chạy ngầm)
-    setIsLoadingAI(true);
-    const preFiltered = indexedRecipes[selectedMood] || [];
-    const titlesForAI = preFiltered.slice(0, 12).map(r => r.title).join(", ");
-    
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "google/gemma-2-9b-it:free",
-          messages: [{ role: "user", content: `JSON: { "recipes": ["Tên"] }. Chọn từ: [${titlesForAI}]` }]
-        })
-      });
-      const data = await response.json();
-      const res = data?.choices?.[0]?.message?.content;
-      
-      if (res) {
-        const cleanJson = res.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsedData = JSON.parse(cleanJson);
-        const aiRecipes = parsedData.recipes || [];
-
-        if (aiRecipes.length > 0) {
-          const finalFilter = masterRecipes.filter(r => 
-            aiRecipes.some(aiName => r.title.toLowerCase().includes(aiName.toLowerCase().trim()))
-          );
-          if (finalFilter.length > 0) setDisplayedRecipes(finalFilter);
-        }
-      }
-    } catch (e) { console.log("AI Offline fallback used"); }
-    setIsLoadingAI(false);
+    setMood(selectedMood); 
+    try { await AsyncStorage.setItem('user_current_mood', selectedMood); } catch (e) {}
   };
 
   const handleShakeAI = useCallback(() => {
@@ -227,13 +220,6 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f9f9f9' }}>
-      {isLoadingAI && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#000000" />
-          <Text style={styles.loadingText}>Đang tìm kiếm...</Text>
-        </View>
-      )}
-
       <FlatList
         data={displayedRecipes}
         keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
@@ -259,12 +245,32 @@ export default function HomeScreen({ navigation }) {
             />
             <View style={styles.sectionTitleContainer}>
               <Text style={styles.sectionTitle}>
-                {mood === 'neutral' ? "Thực đơn hôm nay" : `Tìm thấy ${displayedRecipes.length} món dành cho bạn`}
+                {mood === 'neutral' ? "Thực đơn hôm nay" : `Danh sách các món gợi ý`}
               </Text>
             </View>
           </View>
         }
       />
+
+      <Animated.View 
+        style={[
+          styles.fabWrapper, 
+          { transform: [{ translateY }] }
+        ]}
+      >
+        <TouchableOpacity 
+          style={styles.fabChat} 
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate("Chat")}
+        >
+          <Image 
+            source={require("../../../assets/avatarAI.jpg")} 
+            style={styles.fabIcon} 
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+        <View style={styles.onlineBadge} />
+      </Animated.View>
 
       <SuggestionModal 
         visible={suggestionModalVisible} 
@@ -274,25 +280,45 @@ export default function HomeScreen({ navigation }) {
         pantryItems={pantryItems} 
         getIngredientName={getIngredientName} 
       />
+
+      <Modal transparent visible={pantryAlertVisible} animationType="fade">
+        <View style={styles.alertOverlay}>
+          <View style={styles.alertBox}>
+            <View style={styles.alertIconBg}><Text style={{fontSize: 32}}>⚠️</Text></View>
+            <Text style={styles.alertTitle}>Cần xử lý gấp!</Text>
+            <Text style={styles.alertMessage}>Bạn có thực phẩm sắp hết hạn hoặc đã quá hạn trong tủ lạnh.</Text>
+            <TouchableOpacity 
+                style={styles.alertBtnPrimary} 
+                onPress={() => { setPantryAlertVisible(false); navigation.navigate("Pantry"); }}
+            >
+              <Text style={styles.alertBtnTextPrimary}>Kiểm tra ngay</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingOverlay: {
-    position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: 'white',
-    paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, zIndex: 99, 
-    flexDirection: 'row', alignItems: 'center', elevation: 4, borderWidth: 1, borderColor: '#eee'
-  },
-  loadingText: { marginLeft: 10, fontSize: 12, fontWeight: '600' },
-  listContent: { paddingBottom: 20 },
+  listContent: { paddingBottom: 110 }, 
   columnWrapper: { justifyContent: 'space-between', paddingHorizontal: 15 },
-  sectionTitleContainer: { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 18, marginTop: 25, marginBottom: 12 },
+  sectionTitleContainer: { paddingHorizontal: 18, marginTop: 25, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
-  recipeCount: { fontSize: 14, color: '#838383', fontWeight: 'bold', marginLeft: 6 },
   gridItemContainer: { width: ITEM_WIDTH, marginBottom: 15, backgroundColor: 'white', borderRadius: 18, elevation: 2, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0' },
   gridImage: { width: '100%', height: ITEM_WIDTH },
   gridTextContainer: { padding: 10, alignItems: 'center' },
-  gridTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: '#333' }
+  gridTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: '#333' },
+  fabWrapper: { position: 'absolute', bottom: 30, right: 25, width: 66, height: 66, zIndex: 999 },
+  fabChat: { width: 66, height: 66, borderRadius: 33, backgroundColor: '#FFF', elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, overflow: 'hidden' },
+  fabIcon: { width: '100%', height: '100%' },
+  onlineBadge: { position: 'absolute', top: 1, right: 3, width: 20, height: 20, borderRadius: 10, backgroundColor: '#4CAF50', borderWidth: 3, borderColor: '#FFF', zIndex: 1000 },
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  alertBox: { width: width * 0.85, backgroundColor: 'white', borderRadius: 28, padding: 25, alignItems: 'center' },
+  alertIconBg: { width: 80, height: 80, backgroundColor: '#FFF5F5', borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  alertTitle: { fontSize: 22, fontWeight: '900', color: '#1A1A1A', marginBottom: 12 },
+  alertMessage: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 30, lineHeight: 22 },
+  alertBtnPrimary: { backgroundColor: '#000', paddingVertical: 15, paddingHorizontal: 30, borderRadius: 15 },
+  alertBtnTextPrimary: { color: 'white', fontWeight: '800' },
 });

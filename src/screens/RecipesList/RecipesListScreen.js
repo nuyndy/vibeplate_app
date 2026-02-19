@@ -60,7 +60,7 @@ export default function RecipesListScreen(props) {
     fetchData();
   };
 
-  // Component hiển thị khi không có món nào (Căn giữa)
+  // Component hiển thị khi không có món nào
   const renderEmptyContainer = () => (
     <View style={customStyles.emptyContainer}>
       <Ionicons name="fast-food-outline" size={80} color="#E0E0E0" />

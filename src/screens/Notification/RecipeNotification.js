@@ -1,53 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { db, auth } from '../../firebase/firebaseConfig';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore'; // Thêm orderBy
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { formatDistanceToNow } from 'date-fns';
-import { vi } from 'date-fns/locale'; // Import ngôn ngữ Tiếng Việt
+import { vi } from 'date-fns/locale';
 
 export default function RecipeNotification() {
   const navigation = useNavigation(); 
   const [notifications, setNotifications] = useState([]);
 
-  // Hàm xử lý thời gian thân thiện
   const getRelativeTime = (time) => {
     if (!time) return "Vừa xong";
-    
-    // Chuyển Timestamp Firestore sang Date object
     const date = time.toDate ? time.toDate() : new Date(time);
-    
-    // Tạo chuỗi "X phút trước", "X giờ trước"...
+    // Xử lý chuỗi Tiếng Việt mượt mà hơn
     let relative = formatDistanceToNow(date, { addSuffix: true, locale: vi });
-    
-    // Tùy chỉnh một chút để Tiếng Việt tự nhiên hơn
-    return relative.replace('khoảng ', '');
+    return relative.replace('khoảng ', '').replace('dưới ', '');
   };
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    // Sử dụng onAuthStateChanged để chắc chắn user đã load xong
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      if (!user) {
+        setNotifications([]);
+        return;
+      }
 
-    const q = query(collection(db, "notification"), where("email", "==", user.email));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = [];
-      snapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-      list.sort((a, b) => (b.time?.seconds || 0) - (a.time?.seconds || 0));
-      setNotifications(list);
+      // Tối ưu: Sắp xếp ngay từ câu truy vấn Firestore
+      const q = query(
+        collection(db, "notification"), 
+        where("email", "==", user.email),
+        orderBy("time", "desc") // Phải tạo index trên Firestore nếu dùng cả where và orderBy
+      );
+
+      const unsubscribeSnap = onSnapshot(q, (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setNotifications(list);
+      }, (error) => {
+        console.error("Lỗi listener thông báo:", error);
+      });
+
+      return () => unsubscribeSnap();
     });
-    return () => unsubscribe();
+
+    return () => unsubscribeAuth();
   }, []);
 
   if (notifications.length === 0) return null;
 
   const getStatusConfig = (type) => {
-    switch (type) {
-      case 'approved': return { label: 'CHÚC MỪNG MÓN ĂN BẠN ĐÓNG GÓP ĐÃ DUYỆT', color: '#4CAF50', icon: 'checkmark-circle' };
-      case 'rejected': return { label: 'MÓN ĂN BẠN ĐÓNG GÓP BỊ TỪ CHỐI', color: '#F44336', icon: 'close-circle' };
-      case 'needs_edit': return { label: 'MÓN ĂN BẠN ĐÓNG GÓP CẦN CHỈNH SỬA', color: '#2196F3', icon: 'pencil-sharp' };
-      default: return { label: 'THÔNG BÁO', color: '#757575', icon: 'mail' };
-    }
+    const configs = {
+      approved: { label: 'ĐÃ DUYỆT', color: '#4CAF50', icon: 'checkmark-circle' },
+      rejected: { label: 'TỪ CHỐI', color: '#F44336', icon: 'close-circle' },
+      needs_edit: { label: 'CẦN CHỈNH SỬA', color: '#2196F3', icon: 'pencil-sharp' },
+      default: { label: 'THÔNG BÁO', color: '#757575', icon: 'mail' }
+    };
+    return configs[type] || configs.default;
   };
 
   return (
@@ -58,6 +67,7 @@ export default function RecipeNotification() {
           <TouchableOpacity 
             key={item.id}
             style={styles.card}
+            activeOpacity={0.8}
             onPress={() => navigation.navigate('ContributedDishes')}
           >
             <View style={[styles.statusIndicator, { backgroundColor: config.color }]} />
@@ -67,14 +77,15 @@ export default function RecipeNotification() {
                   <Ionicons name={config.icon} size={12} color={config.color} />
                   <Text style={[styles.tagText, { color: config.color }]}>{config.label}</Text>
                 </View>
-                {/* HIỂN THỊ THỜI GIAN THÂN THIỆN TẠI ĐÂY */}
                 <Text style={styles.timeText}>{getRelativeTime(item.time)}</Text>
               </View>
-              <Text style={styles.contentTitle} numberOfLines={2}>{item.content}</Text>
+              
+              <Text style={styles.contentTitle}>{item.content}</Text>
+              
               {item.feedback && (
                 <View style={styles.feedbackBox}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={14} color="#888" style={{marginBottom: 4}} />
                   <Text style={styles.feedbackText} numberOfLines={3}>
-                    <Text style={{fontWeight: 'bold', color: '#555'}}>Ghi chú: </Text>
                     "{item.feedback}"
                   </Text>
                 </View>
@@ -87,6 +98,7 @@ export default function RecipeNotification() {
   );
 }
 
+// ... styles giữ nguyên (có thể thêm style cho icon trong feedbackBox nếu muốn)
 const styles = StyleSheet.create({
   wrapper: { marginBottom: 10 },
   card: {

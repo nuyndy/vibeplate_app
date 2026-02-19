@@ -11,6 +11,12 @@ import MenuImage from "../../components/MenuImage/MenuImage";
 import { Ionicons } from '@expo/vector-icons';
 import RecipeNotification from './RecipeNotification';
 
+/**
+ * 1. Admin: Kiểm tra role từ Firestore để hiển thị thông báo phê duyệt món ăn.
+ * 2. Inventory: Quét tủ lạnh, so sánh ngày hết hạn (cảnh báo nếu <= 3 ngày).
+ * 3. Real-time: Kết hợp onSnapshot cho tủ lạnh và getDocs cho Admin để cân bằng hiệu năng.
+ */
+
 export default function NotificationScreen(props) {
   const { navigation } = props;
   const [isAdmin, setIsAdmin] = useState(false);
@@ -19,43 +25,39 @@ export default function NotificationScreen(props) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Cấu hình Header
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'THÔNG BÁO',
+      headerTitleAlign: 'center',
       headerTitleStyle: { fontWeight: '900', letterSpacing: 1, fontSize: 15 },
       headerLeft: () => <MenuImage onPress={() => navigation.openDrawer()} />,
     });
-  }, []);
+  }, [navigation]);
 
-  // --- HÀM TẢI DỮ LIỆU (Dùng cho cả useEffect và Reload) ---
+  // --- HÀM TẢI DỮ LIỆU TỔNG HỢP ---
   const fetchData = async (user) => {
     if (!user) return;
     try {
-      // 1. Kiểm tra quyền Admin
-      const userDoc = await getDoc(doc(db, "users", user.email));
+      // Tối ưu hóa: Chạy song song các truy vấn không phụ thuộc nhau
+      const [userDoc, snapInv] = await Promise.all([
+        getDoc(doc(db, "users", user.email)),
+        getDocs(query(collection(db, "inventory"), where("email", "==", user.email)))
+      ]);
+
       const userRole = userDoc.data()?.role;
       const checkAdmin = userRole === 'admin';
       setIsAdmin(checkAdmin);
 
-      // 2. Đếm các món đang chờ (nếu là admin)
+      // Nếu là admin, fetch thêm số lượng món chờ duyệt
       if (checkAdmin) {
         const qPending = query(collection(db, "suggested_recipes"), where("status", "==", "pending"));
         const snapPending = await getDocs(qPending);
         setPendingCount(snapPending.size);
       }
 
-      // 3. Kiểm tra tủ lạnh
-      const qInv = query(collection(db, "inventory"), where("email", "==", user.email));
-      const snapInv = await getDocs(qInv);
-      const today = startOfDay(new Date());
-      let count = 0;
-      
-      snapInv.docs.forEach(d => {
-        const data = d.data();
-        let expDate = data.expiryDate?.toDate ? startOfDay(data.expiryDate.toDate()) : startOfDay(new Date(data.expiryDate));
-        if (differenceInDays(expDate, today) <= 3) count++;
-      });
-      setExpiredCount(count);
+      // Tính toán nguyên liệu hết hạn từ dữ liệu Inventory
+      processInventoryData(snapInv.docs);
       
     } catch (error) {
       console.log("Lỗi tải thông báo:", error);
@@ -65,41 +67,57 @@ export default function NotificationScreen(props) {
     }
   };
 
-  // --- XỬ LÝ REFRESH ---
+  // Logic xử lý ngày hết hạn
+  const processInventoryData = (docs) => {
+    const today = startOfDay(new Date());
+    let count = 0;
+    docs.forEach(d => {
+      const data = d.data();
+      // Xử lý cả định dạng Timestamp của Firestore và chuỗi Date ISO
+      let expDate = data.expiryDate?.toDate 
+        ? startOfDay(data.expiryDate.toDate()) 
+        : startOfDay(new Date(data.expiryDate));
+      
+      if (differenceInDays(expDate, today) <= 3) count++;
+    });
+    setExpiredCount(count);
+  };
+
+  // --- XỬ LÝ REFRESH (Kéo xuống để cập nhật) ---
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     if (auth.currentUser) {
       fetchData(auth.currentUser);
     } else {
       setRefreshing(false);
-      Alert.alert("Thông báo", "Bạn cần đăng nhập để cập nhật thông báo.");
+      Alert.alert("Thông báo", "Bạn cần đăng nhập để cập nhật.");
     }
   }, []);
 
+  // --- THEO DÕI TRẠNG THÁI ĐĂNG NHẬP & REALTIME ---
   useEffect(() => {
+    let unsubInv = null;
+
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         fetchData(user);
         
-        // Vẫn giữ onSnapshot để cập nhật Realtime mượt mà
+        // Listener Real-time cho tủ lạnh (Để số lượng cập nhật ngay khi sửa ở màn hình khác)
         const qInv = query(collection(db, "inventory"), where("email", "==", user.email));
-        const unsubInv = onSnapshot(qInv, (snapshot) => {
-          const today = startOfDay(new Date());
-          let count = 0;
-          snapshot.docs.forEach(d => {
-            const data = d.data();
-            let expDate = data.expiryDate?.toDate ? startOfDay(data.expiryDate.toDate()) : startOfDay(new Date(data.expiryDate));
-            if (differenceInDays(expDate, today) <= 3) count++;
-          });
-          setExpiredCount(count);
+        unsubInv = onSnapshot(qInv, (snapshot) => {
+          processInventoryData(snapshot.docs);
         });
-
-        return () => unsubInv();
       } else {
         setIsLoading(false);
+        setIsAdmin(false);
       }
     });
-    return () => unsubscribeAuth();
+
+    // Cleanup: Dọn dẹp tất cả listeners khi thoát màn hình
+    return () => {
+      unsubscribeAuth();
+      if (unsubInv) unsubInv();
+    };
   }, []);
 
   if (isLoading) {
@@ -116,16 +134,11 @@ export default function NotificationScreen(props) {
         contentContainerStyle={styles.contentContainer} 
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#000" // Màu vòng xoay trên iOS
-            colors={["#000"]} // Màu vòng xoay trên Android
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" colors={["#000"]} />
         }
       >
         
-        {/* THÔNG BÁO ADMIN */}
+        {/* CARD: THÔNG BÁO QUẢN TRỊ (Chỉ Admin thấy) */}
         {isAdmin && pendingCount > 0 && (
           <TouchableOpacity 
             style={styles.card} 
@@ -138,14 +151,14 @@ export default function NotificationScreen(props) {
                   <Ionicons name="shield-checkmark" size={12} color="#096b3a" />
                   <Text style={[styles.tagText, { color: '#096b3a' }]}>QUẢN TRỊ VIÊN</Text>
                 </View>
-                <Text style={styles.timeText}>Vừa cập nhật</Text>
+                <Text style={styles.timeText}>Mới</Text>
               </View>
-              <Text style={styles.contentTitle}>Bạn có {pendingCount} yêu cầu phê duyệt công thức mới</Text>
+              <Text style={styles.contentTitle}>Bạn có {pendingCount} yêu cầu phê duyệt công thức đang chờ xử lý.</Text>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* THÔNG BÁO TỦ LẠNH */}
+        {/* CARD: THÔNG BÁO TỦ LẠNH (Cảnh báo hết hạn) */}
         {expiredCount > 0 && (
           <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Pantry')}>
             <View style={[styles.statusIndicator, { backgroundColor: '#ff0015' }]} />
@@ -153,24 +166,24 @@ export default function NotificationScreen(props) {
               <View style={styles.row}>
                 <View style={[styles.tag, { backgroundColor: '#FFF0F0' }]}>
                   <Ionicons name="alert-circle" size={12} color="#ff0015" />
-                  <Text style={[styles.tagText, { color: '#ff0015' }]}>KIỂM TRA TỦ LẠNH</Text>
+                  <Text style={[styles.tagText, { color: '#ff0015' }]}>CẢNH BÁO HẾT HẠN</Text>
                 </View>
                 <Text style={styles.timeText}>Gấp</Text>
               </View>
-              <Text style={styles.contentTitle}>Phát hiện {expiredCount} nguyên liệu sắp hết hạn. Xem ngay!</Text>
+              <Text style={styles.contentTitle}>Có {expiredCount} nguyên liệu sắp hết hạn. Hãy sử dụng ngay trước khi hỏng!</Text>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* THÔNG BÁO NGƯỜI DÙNG TỪ COMPONENT CON */}
+        {/* COMPONENT PHỤ: Thông báo công thức cá nhân */}
         <RecipeNotification navigation={navigation} />
 
-        {/* MÀN HÌNH TRỐNG */}
+        {/* EMPTY STATE: Khi không có thông báo nào */}
         {!isAdmin && expiredCount === 0 && (
            <View style={styles.emptyContainer}>
              <Ionicons name="leaf-outline" size={60} color="#E0E0E0" />
-             <Text style={styles.emptyText}>Hiện tại chưa có thông báo mới nào</Text>
-             <Text style={styles.emptySubText}>Hãy vuốt xuống để làm mới nếu cần</Text>
+             <Text style={styles.emptyText}>Bạn đã xem hết thông báo</Text>
+             <Text style={styles.emptySubText}>Vuốt xuống để làm mới dữ liệu</Text>
            </View>
         )}
       </ScrollView>
@@ -180,7 +193,7 @@ export default function NotificationScreen(props) {
 
 const styles = StyleSheet.create({
   contentContainer: { padding: 16, flexGrow: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   card: {
     backgroundColor: '#fff', borderRadius: 20, marginBottom: 12,
     flexDirection: 'row', overflow: 'hidden',

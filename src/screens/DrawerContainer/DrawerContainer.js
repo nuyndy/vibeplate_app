@@ -1,13 +1,17 @@
-// src/screens/DrawerContainer/DrawerContainer.js
-
 import React from "react";
-import { View } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import PropTypes from "prop-types";
 import styles from "./styles";
 import MenuButton from "../../components/MenuButton/MenuButton";
 
+// --- IMPORT CONTEXT ---
+import { useBadge } from "../../contexts/BadgeContext"; 
+
 export default function DrawerContainer(props) {
   const { navigation } = props;
+  
+  const totalBadge = useBadge();
+
   return (
     <View style={styles.content}>
       <View style={styles.container}>
@@ -32,7 +36,6 @@ export default function DrawerContainer(props) {
           source={require("../../../assets/icons/search.png")}
           onPress={() => {
             navigation.navigate("Main", { screen: "Search" });
-            navigation.closeDrawer();
           }}
         />
         <MenuButton
@@ -40,7 +43,6 @@ export default function DrawerContainer(props) {
           source={require("../../../assets/icons/pantry.png")} 
           onPress={() => {
             navigation.navigate("Main", { screen: "Pantry" });
-            navigation.closeDrawer();
           }}
         />
         <MenuButton
@@ -48,7 +50,6 @@ export default function DrawerContainer(props) {
           source={require("../../../assets/icons/cart.png")} 
           onPress={() => {
             navigation.navigate("Main", { screen: "ShoppingList" });
-            navigation.closeDrawer();
           }}
         />
         <MenuButton
@@ -56,22 +57,25 @@ export default function DrawerContainer(props) {
           source={require("../../../assets/icons/assistant.png")}
           onPress={() => {
             navigation.navigate("Main", { screen: "Chat" });
-            navigation.closeDrawer();
           }}
         />
         
-        {/* --- NÚT THÔNG BÁO (Thêm vào đây, TRƯỚC trang Tài khoản) --- */}
-        <MenuButton
-          title="THÔNG BÁO"
-          // Lưu ý: Bạn nên tìm icon cái chuông và đổi tên thành notification.png nhé
-          // Tạm thời mình dùng icon search để không bị lỗi ảnh
-          source={require("../../../assets/icons/notification.png")} 
-          onPress={() => {
-            // Lệnh này bảo app chuyển sang màn hình tên là "Notification"
-            navigation.navigate("Main", { screen: "Notification" });
-            navigation.closeDrawer();
-          }}
-        />
+        {/* --- NÚT THÔNG BÁO DÙNG CHUNG SỐ VỚI HEADER --- */}
+        <View style={localStyles.badgeWrapper}>
+          <MenuButton
+            title="THÔNG BÁO"
+            source={require("../../../assets/icons/notification.png")} 
+            onPress={() => {
+              navigation.navigate("Main", { screen: "Notification" });
+              navigation.closeDrawer();
+            }}
+          />
+          {totalBadge > 0 && (
+            <View style={localStyles.badge}>
+              <Text style={localStyles.badgeText}>{totalBadge > 9 ? '9+' : totalBadge}</Text>
+            </View>
+          )}
+        </View>
 
         <MenuButton
           title="TÀI KHOẢN"
@@ -86,8 +90,35 @@ export default function DrawerContainer(props) {
   );
 }
 
+const localStyles = StyleSheet.create({
+  badgeWrapper: {
+    position: 'relative',
+    width: '100%',
+  },
+  badge: {
+    position: 'absolute',
+    left: 15,              
+    top: 9,               
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFF',
+    zIndex: 999,
+  },
+  badgeText: {
+    color: '#FFF',
+    fontSize: 8,
+    fontWeight: '900',
+  }
+});
+
 DrawerContainer.propTypes = {
   navigation: PropTypes.shape({
     navigate: PropTypes.func.isRequired,
+    closeDrawer: PropTypes.func.isRequired,
   }),
 };

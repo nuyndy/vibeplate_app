@@ -6,7 +6,7 @@ import {
   Image, 
   TouchableHighlight, 
   ActivityIndicator, 
-  RefreshControl // <--- 1. Thêm RefreshControl
+  RefreshControl
 } from "react-native";
 import styles from "./styles";
 import { getRecipesByIngredient, getAllCategories } from "../../data/MockDataAPI"; 
@@ -22,7 +22,7 @@ export default function IngredientScreen(props) {
   // --- STATES ---
   const [recipesData, setRecipesData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false); // <--- 2. State reload
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -30,7 +30,7 @@ export default function IngredientScreen(props) {
     });
   }, [navigation, ingredientName]);
 
-  // --- 3. HÀM FETCH DỮ LIỆU ---
+  // --- HÀM FETCH DỮ LIỆU ---
   const fetchData = useCallback(async () => {
     if (!ingredientId) return;
 
@@ -55,11 +55,11 @@ export default function IngredientScreen(props) {
       console.error("Error fetching ingredient details:", error);
     } finally {
       setIsLoading(false);
-      setIsRefreshing(false); // Tắt hiệu ứng xoay
+      setIsRefreshing(false);
     }
   }, [ingredientId]);
 
-  // --- 4. XỬ LÝ RELOAD ---
+  // --- XỬ LÝ RELOAD ---
   const onRefresh = () => {
     setIsRefreshing(true);
     fetchData();
@@ -117,13 +117,12 @@ export default function IngredientScreen(props) {
         keyExtractor={(item) => `${item.recipeId || item.id}`}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{ paddingBottom: 20 }}
-        // --- 5. THÊM REFRESH CONTROL ---
         refreshControl={
           <RefreshControl 
             refreshing={isRefreshing} 
             onRefresh={onRefresh} 
-            tintColor="#000"   // iOS spinner màu đen
-            colors={["#000"]}  // Android spinner màu đen
+            tintColor="#000"   
+            colors={["#000"]}
           />
         }
       />

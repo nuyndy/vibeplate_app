@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, ScrollView, TouchableOpacity, 
   Image, Alert, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Modal, FlatList
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons'; // Thêm icon để làm nút Back
 import * as ImagePicker from 'expo-image-picker';
 import { db, auth } from '../../firebase/firebaseConfig'; 
 import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -60,15 +61,25 @@ export default function DishNominationScreen({ navigation }) {
     }
   }, [ingredientSearch, allIngredients]);
 
+  // --- CẬP NHẬT HEADER LEFT TẠI ĐÂY ---
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Đóng Góp Món Ngon',
+      headerTitleAlign: 'center', // Căn giữa tiêu đề cho đẹp
       headerStyle: { backgroundColor: COLORS.card },
       headerTintColor: COLORS.primary,
+      headerLeft: () => (
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()} 
+          style={{ marginLeft: 15, padding: 5 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
+      ),
     });
   }, [navigation]);
 
-  // --- HÀM UPLOAD ẢNH (ĐÃ TỐI ƯU FORM DATA) ---
+  // --- HÀM UPLOAD ẢNH (GIỮ NGUYÊN) ---
   const uploadToCloudinary = async (imageUri) => {
     const data = new FormData();
     const uri = Platform.OS === 'android' ? imageUri : imageUri.replace('file://', '');
@@ -96,7 +107,7 @@ export default function DishNominationScreen({ navigation }) {
     }
   };
 
-  // --- HÀM CHỌN ẢNH (DÙNG CHUỖI 'images' ĐỂ TRÁNH LỖI UNDEFINED) ---
+  // --- HÀM CHỌN ẢNH (GIỮ NGUYÊN) ---
   const pickImage = async (type) => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -106,7 +117,6 @@ export default function DishNominationScreen({ navigation }) {
         return;
       }
 
-      // SỬA LỖI Ở ĐÂY: Dùng string 'images' thay vì ImagePicker.MediaType.Images
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images', 
         allowsEditing: true,
@@ -238,7 +248,7 @@ export default function DishNominationScreen({ navigation }) {
                     {selectedIngredient ? selectedIngredient.name : "Chọn..."}
                   </Text>
               </TouchableOpacity>
-              <TextInput style={[styles.input, {flex: 1, height: 50}]} placeholder="Lượng" value={tempQty} onChangeText={setTempQty} />
+              <TextInput style={[styles.input, {flex: 1, height: 50, marginLeft: 10}]} placeholder="Lượng" value={tempQty} onChangeText={setTempQty} />
               <TouchableOpacity style={styles.btnAddSmall} onPress={addIngredient}><Text style={styles.btnAddText}>+</Text></TouchableOpacity>
             </View>
             <View style={styles.chipContainer}>
@@ -253,11 +263,11 @@ export default function DishNominationScreen({ navigation }) {
           <View style={styles.card}>
             <Text style={styles.sectionHeader}>🍳 Cách làm</Text>
             <TextInput 
-               style={[styles.input, {height: 120, textAlignVertical: 'top'}]} 
-               placeholder="Mô tả các bước nấu ăn..." 
-               multiline 
-               value={description} 
-               onChangeText={setDescription} 
+                style={[styles.input, {height: 120, textAlignVertical: 'top'}]} 
+                placeholder="Mô tả các bước nấu ăn..." 
+                multiline 
+                value={description} 
+                onChangeText={setDescription} 
             />
 
             <View style={{marginTop: 15}}>

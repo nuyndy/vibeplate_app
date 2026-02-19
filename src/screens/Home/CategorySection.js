@@ -1,31 +1,32 @@
-import React from 'react';
+import React, { memo } from 'react'; // Thêm memo
 import { View, Text, FlatList, LayoutAnimation, Platform, UIManager } from 'react-native';
 import RecipeCard from './RecipeCard';
 
-// Kích hoạt LayoutAnimation cho Android để khi AI lọc, các thẻ bài "bay" mượt hơn
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-export default function CategorySection({ item, onPressRecipe }) {
+// Bọc component bằng memo để tránh re-render thừa
+const CategorySection = memo(({ item, onPressRecipe }) => {
   
-  // Mỗi khi danh sách món thay đổi, thực hiện hiệu ứng chuyển động nhẹ
-  // Điều này giúp trải nghiệm lọc theo tâm trạng cảm thấy "xịn" hơn
   React.useEffect(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    // Chỉ chạy hiệu ứng nếu danh sách recipes có dữ liệu để tránh giật lag lúc mount
+    if (item.recipes.length > 0) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
   }, [item.recipes]);
 
+  // Sử dụng useCallback cho renderItem nếu CategorySection phức tạp hơn, 
+  // nhưng ở mức độ này render trực tiếp vẫn ổn.
   const renderItem = ({ item: recipe }) => (
     <View style={{ position: 'relative' }}>
       <RecipeCard item={recipe} onPress={onPressRecipe} />
-      
-      {/* Nếu cần, bạn có thể thêm một chấm nhỏ hoặc Badge ở đây 
-          để đánh dấu món này đang cực kỳ "Hot" theo Mood */}
     </View>
   );
 
   return (
     <View style={{ marginBottom: 25 }}>
+      {/* Header Section */}
       <View style={{ 
         flexDirection: 'row', 
         alignItems: 'center', 
@@ -55,14 +56,18 @@ export default function CategorySection({ item, onPressRecipe }) {
         showsHorizontalScrollIndicator={false}
         snapToAlignment="start"
         decelerationRate="fast"
+        // Tối ưu hiệu năng FlatList
+        removeClippedSubviews={true} 
+        initialNumToRender={5}
+        windowSize={5}
         contentContainerStyle={{ 
           paddingLeft: 15, 
           paddingRight: 15,
-          paddingBottom: 5 // Tạo khoảng trống cho bóng đổ của card
+          paddingBottom: 5 
         }}
       />
       
-      {/* Đường kẻ mờ phân cách giữa các danh mục cho sạch sẽ */}
+      {/* Separator */}
       <View style={{ 
         height: 1, 
         backgroundColor: '#F0F0F0', 
@@ -71,4 +76,6 @@ export default function CategorySection({ item, onPressRecipe }) {
       }} />
     </View>
   );
-}
+});
+
+export default CategorySection;
