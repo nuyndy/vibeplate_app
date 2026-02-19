@@ -10,7 +10,7 @@ import {
   TextInput, 
   ScrollView, 
   ActivityIndicator,
-  RefreshControl // 1. Thêm RefreshControl
+  RefreshControl 
 } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import styles from "./styles"; 
@@ -36,10 +36,12 @@ export default function SearchScreen(props) {
   const [defaultRecipes, setDefaultRecipes] = useState([]);
   const [categoryMap, setCategoryMap] = useState({});
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false); // 2. State quản lý reload
+  const [refreshing, setRefreshing] = useState(false);
+  
   const inputRef = useRef(null);
+  const typingTimeoutRef = useRef(null); // Ref để xử lý debounce
 
-  // Hàm load dữ liệu chính
+  // --- 1. KHỞI TẠO DỮ LIỆU BAN ĐẦU ---
   const initialize = async () => {
     try {
         const cats = await getAllCategories();
@@ -61,17 +63,18 @@ export default function SearchScreen(props) {
     initialize();
   }, []);
 
-  // 3. Logic xử lý khi người dùng vuốt xuống để Reload
+  // --- 2. XỬ LÝ REFRESH (VUỐT XUỐNG ĐỂ TẢI LẠI) ---
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     if (value === "") {
-        await initialize(); // Load lại gợi ý nếu đang ở màn hình chính
+        await initialize();
     } else {
-        await handleSearch(value); // Search lại từ khóa hiện tại
+        await performSearch(value); 
     }
     setRefreshing(false);
   }, [value]);
 
+  // --- 3. CẤU HÌNH HEADER NAVIGATION ---
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Tìm kiếm',
@@ -82,7 +85,7 @@ export default function SearchScreen(props) {
           <TextInput
             ref={inputRef}
             style={styles.searchInput}
-            onChangeText={handleSearch}
+            onChangeText={onChangeText} // Gọi hàm trung gian
             placeholder="Tìm món ăn, nguyên liệu..." 
             placeholderTextColor="grey"
             onSubmitEditing={() => saveHistory(value)} 
@@ -99,6 +102,51 @@ export default function SearchScreen(props) {
     });
   }, [value]); 
 
+  // --- 4. LOGIC TÌM KIẾM VÀ DEBOUNCE ---
+  const onChangeText = (text) => {
+    setValue(text);
+    
+    // Xóa timeout cũ nếu người dùng vẫn đang gõ
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // Thiết lập timeout mới (đợi 500ms sau khi ngừng gõ mới tìm)
+    typingTimeoutRef.current = setTimeout(() => {
+        performSearch(text);
+    }, 500);
+  };
+
+  const performSearch = async (text) => {
+    if (!text || text.trim() === "") {
+      setData([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const queryText = text.trim();
+      const [byName, byCategory, byIngredient] = await Promise.all([
+        getRecipesByRecipeName(queryText),
+        getRecipesByCategoryName(queryText),
+        getRecipesByIngredientName(queryText)
+      ]);
+      
+      const combined = [...byName, ...byCategory, ...byIngredient];
+      const uniqueIds = new Set();
+      const uniqueRecipes = combined.filter(element => {
+        const isDuplicate = uniqueIds.has(element.id);
+        uniqueIds.add(element.id);
+        return !isDuplicate;
+      });
+      
+      setData(uniqueRecipes);
+    } catch (error) {
+      console.error("Lỗi tìm kiếm:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 5. QUẢN LÝ LỊCH SỬ ---
   const saveHistory = async (text) => {
     const trimmedText = text.trim();
     if (!trimmedText) return;
@@ -122,40 +170,12 @@ export default function SearchScreen(props) {
     }
   };
 
-  const handleSearch = async (text) => {
-    setValue(text);
-    if (!text || text.trim() === "") {
-      setData([]);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const [byName, byCategory, byIngredient] = await Promise.all([
-        getRecipesByRecipeName(text.trim()),
-        getRecipesByCategoryName(text.trim()),
-        getRecipesByIngredientName(text.trim())
-      ]);
-      const combined = [...byName, ...byCategory, ...byIngredient];
-      const uniqueIds = new Set();
-      const uniqueRecipes = combined.filter(element => {
-        const isDuplicate = uniqueIds.has(element.id);
-        uniqueIds.add(element.id);
-        return !isDuplicate;
-      });
-      setData(uniqueRecipes);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const onPressRecipe = (item) => {
     saveHistory(item.title); 
     navigation.navigate("Recipe", { item });
   };
 
+  // --- 6. RENDER GIAO DIỆN ITEM ---
   const renderRecipes = ({ item }) => (
     <TouchableHighlight 
       underlayColor="rgba(0,0,0,0.05)" 
@@ -171,7 +191,7 @@ export default function SearchScreen(props) {
           <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333' }} numberOfLines={1}>
             {item.title}
           </Text>
-          <Text style={{ fontSize: 14, color: '#000000', marginTop: 4 }}>
+          <Text style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
             {categoryMap[item.categoryId] || "Món ngon"}
           </Text>
         </View>
@@ -186,11 +206,11 @@ export default function SearchScreen(props) {
         <ScrollView 
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            // 4. Thêm RefreshControl cho ScrollView
             refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
         >
+          {/* PHẦN LỊCH SỬ TÌM KIẾM */}
           {history.length > 0 && (
             <View style={{ padding: 15 }}>
                 <Text style={{ fontWeight: 'bold', marginBottom: 15, color: '#333', fontSize: 16 }}>Gần đây</Text>
@@ -198,7 +218,10 @@ export default function SearchScreen(props) {
                     <View key={`hist-${index}`} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
                         <Pressable 
                             style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} 
-                            onPress={() => handleSearch(item)}
+                            onPress={() => {
+                                setValue(item);
+                                performSearch(item);
+                            }}
                         >
                             <Ionicons name="time-outline" size={20} color="#999" />
                             <Text style={{ marginLeft: 10, color: '#555', fontSize: 15 }}>{item}</Text>
@@ -211,10 +234,10 @@ export default function SearchScreen(props) {
             </View>
           )}
           
+          {/* PHẦN GỢI Ý MẶC ĐỊNH */}
           <Text style={{ fontWeight: 'bold', marginLeft: 15, marginTop: 10, color: '#333', fontSize: 16, marginBottom: 10 }}>Gợi ý cho bạn</Text>
           <FlatList
             key="suggested-list"
-            numColumns={1}
             data={defaultRecipes}
             renderItem={renderRecipes}
             keyExtractor={(item) => `sug-${item.id}`}
@@ -225,25 +248,28 @@ export default function SearchScreen(props) {
       ) : (
         <View style={{ flex: 1 }}>
             {loading && !refreshing ? (
-                <ActivityIndicator color="#000000" style={{ marginTop: 20 }} />
+                <View style={{ marginTop: 30, alignItems: 'center' }}>
+                    <ActivityIndicator color="#000" size="large" />
+                    <Text style={{ marginTop: 10, color: '#999' }}>Đang tìm kiếm...</Text>
+                </View>
             ) : (
                 <FlatList
                     key="search-results-list"
-                    numColumns={1}
                     data={data}
                     renderItem={renderRecipes}
                     keyExtractor={(item) => `res-${item.id}`}
                     showsVerticalScrollIndicator={false}
                     onScrollBeginDrag={() => Keyboard.dismiss()}
                     contentContainerStyle={{ paddingHorizontal: 15, paddingTop: 10 }}
-                    // 5. Thêm RefreshControl cho FlatList kết quả
                     refreshControl={
                         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                     }
                     ListEmptyComponent={
-                        <View style={{ alignItems: 'center', marginTop: 50 }}>
-                            <Ionicons name="search-outline" size={50} color="#eee" />
-                            <Text style={{ color: '#999', marginTop: 10 }}>Không tìm thấy món ăn nào</Text>
+                        <View style={{ alignItems: 'center', marginTop: 80 }}>
+                            <Ionicons name="search-outline" size={60} color="#ddd" />
+                            <Text style={{ color: '#999', marginTop: 15, fontSize: 15 }}>
+                                Không tìm thấy món "{value}"
+                            </Text>
                         </View>
                     }
                 />

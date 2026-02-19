@@ -1,393 +1,318 @@
-import React, { useLayoutEffect, useRef, useState, useEffect, useCallback } from "react";
+import React, { useLayoutEffect, useState, useEffect, useCallback, useMemo, memo } from "react";
 import { 
-  View, 
-  Text, 
-  Image, 
-  TouchableOpacity, 
-  ScrollView, 
-  ActivityIndicator, 
-  StyleSheet, 
-  StatusBar, 
-  Alert, 
-  Dimensions,
-  RefreshControl
+  View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator, 
+  StyleSheet, StatusBar, Dimensions, RefreshControl, Alert, Modal
 } from "react-native";
 import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  deleteDoc, 
-  serverTimestamp, 
-  writeBatch 
+  collection, query, where, onSnapshot, doc, getDoc, setDoc, 
+  deleteDoc, serverTimestamp, addDoc 
 } from "firebase/firestore";
-import { useSharedValue } from 'react-native-reanimated';
-import Carousel, { Pagination } from 'react-native-reanimated-carousel';
+import Carousel from 'react-native-reanimated-carousel';
 
 import { getCategoryById, getAllIngredients } from "../../data/MockDataAPI"; 
 import BackButton from "../../components/BackButton/BackButton";
-import styles from "./styles"; 
 import { auth, db } from '../../firebase/firebaseConfig';
 
 const { width: viewportWidth, height: viewportHeight } = Dimensions.get("window");
 
-// MÃ API KEY
-const OPENROUTER_API_KEY = "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"; 
+// --- COMPONENT CON ---
+const IngredientItem = memo(({ data, qty, isAvailable, onPress }) => (
+  <TouchableOpacity style={ui.ingCard} onPress={onPress}>
+    <View style={[ui.ingCircle, isAvailable && ui.ingCircleActive]}>
+      <Image source={{ uri: data?.photo_url }} style={ui.ingImage} />
+      {isAvailable && (
+        <View style={ui.checkBadge}>
+          <Text style={ui.checkText}>✓</Text>
+        </View>
+      )}
+    </View>
+    <Text style={[ui.ingName, isAvailable && ui.textSuccess]} numberOfLines={1}>
+      {data?.name}
+    </Text>
+    <Text style={ui.ingQty}>{qty}</Text>
+  </TouchableOpacity>
+));
 
 export default function RecipeScreen(props) {
   const { navigation, route } = props;
-  const item = route.params?.item; 
+  const item = route.params?.item || {}; 
 
-  // --- STATES ---
   const [activeCategory, setActiveCategory] = useState(null);
   const [ingredientsData, setIngredientsData] = useState([]); 
   const [isLoadingIngredients, setIsLoadingIngredients] = useState(true);
   const [isSaved, setIsSaved] = useState(false); 
   const [pantryData, setPantryData] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [missingItems, setMissingItems] = useState([]);
 
-  // 🔥 STATE CHO AI TÍNH CALO
-  const [aiCalories, setAiCalories] = useState(null);
-  const [isCalculatingCalories, setIsCalculatingCalories] = useState(false);
+  // --- 1. TỐI ƯU CALORIES ---
+  const displayCalories = useMemo(() => {
+    const dbCalo = item?.calories || item?.kcal || item?.calorie || item?.energy;
+    if (dbCalo) return dbCalo;
+    if (item?.time && item?.ingredients) {
+      return parseInt(item.time) * 5 + item.ingredients.length * 25;
+    }
+    return "--";
+  }, [item]);
 
-  const slider1Ref = useRef(null);
-  const progress = useSharedValue(0);
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerTransparent: true, headerLeft: () => null, headerTitle: "" });
+  }, [navigation]);
 
-  const normalizeName = (name) => name ? name.toLowerCase().trim() : "";
+  // --- 2. TỐI ƯU PANTRY SEARCH ---
+  const pantryNamesSet = useMemo(() => {
+    return new Set(pantryData.map(p => p.name.toLowerCase().trim()));
+  }, [pantryData]);
 
-  // --- HÀM TẢI DỮ LIỆU TỔNG HỢP ---
+  const checkAvailable = useCallback((recipeIngName) => {
+    if (!recipeIngName) return false;
+    const name = recipeIngName.toLowerCase().trim();
+    return pantryNamesSet.has(name);
+  }, [pantryNamesSet]);
+
+  // --- 3. FIREBASE LISTENERS ---
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const q = query(collection(db, "inventory"), where("email", "==", user.email));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => ({ 
+        name: doc.data().name?.toLowerCase().trim() || "" 
+      }));
+      setPantryData(items);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 4. LOAD CHI TIẾT DỮ LIỆU ---
   const loadAllData = useCallback(async () => {
-    if (!item) return;
+    if (!item?.id) return;
     try {
       const [catData, ingredientsDetail] = await Promise.all([
         item.categoryId ? getCategoryById(item.categoryId) : Promise.resolve(null),
         item.ingredients ? getAllIngredients(item.ingredients) : Promise.resolve([])
       ]);
-
       setActiveCategory(catData);
       setIngredientsData(ingredientsDetail);
-
+      
       const user = auth.currentUser;
       if (user) {
-        const docId = `${user.uid}_${item.recipeId}`;
-        const docSnap = await getDoc(doc(db, "favorites", docId));
+        const docSnap = await getDoc(doc(db, "favorites", `${user.uid}_${item.id}`));
         setIsSaved(docSnap.exists());
       }
-    } catch (error) {
-      console.error("Lỗi tải dữ liệu:", error);
-    } finally {
-      setIsLoadingIngredients(false);
-      setIsRefreshing(false);
+    } catch (e) { 
+      console.error("Load Error:", e); 
+    } finally { 
+      setIsLoadingIngredients(false); 
+      setIsRefreshing(false); 
     }
-  }, [item]);
+  }, [item.id]);
 
-  const onRefresh = () => {
-    setIsRefreshing(true);
-    loadAllData();
-  };
+  useEffect(() => { loadAllData(); }, [loadAllData]);
 
-  useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
-
-  // --- REALTIME PANTRY ---
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (user && user.email) {
-      const q = query(collection(db, "inventory"), where("email", "==", user.email));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPantryData(items);
-      });
-      return () => unsubscribe();
-    }
-  }, []);
-
-  // 🤖 GỌI AI ĐỂ TÍNH CALO
-  const calculateCaloriesWithAI = useCallback(async () => {
-    if (!ingredientsData || ingredientsData.length === 0) return;
-    
-    setIsCalculatingCalories(true);
-    try {
-      // 1. Gộp mảng nguyên liệu thành 1 chuỗi văn bản (VD: "500g thịt bò, 2 muỗng đường")
-      const ingredientsListStr = ingredientsData.map(ingArray => {
-        const data = ingArray[0];
-        const qty = ingArray[1];
-        return `${qty} ${data?.name || ''}`;
-      }).join(", ");
-
-      const servingsCount = item.servings || 2;
-
-      // 2. Viết Prompt gắt gao ép AI chỉ nhả ra số
-      const prompt = `Tính tổng lượng Calo (Kcal) xấp xỉ cho danh sách nguyên liệu nấu ăn sau: ${ingredientsListStr}.
-      Sau đó chia cho ${servingsCount} người ăn.
-      Tuyệt đối chỉ trả về 1 con số nguyên duy nhất (là lượng Kcal cho 1 người ăn).
-      Không thêm chữ Kcal, không giải thích, không dấu câu.`;
-
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "HTTP-Referer": "http://localhost:8081",
-          "X-Title": "RecipeApp",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          models: [
-            "google/gemma-2-9b-it:free",
-            "mistralai/mistral-7b-instruct:free",
-            "openrouter/free"
-          ],
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-
-      const data = await response.json();
-      const aiResponse = data.choices?.[0]?.message?.content?.trim();
-      
-      // 3. Dùng Regex lọc lấy đúng con số từ kết quả AI trả về (phòng khi AI nói lan man)
-      const match = aiResponse?.match(/\d+/);
-      if (match) {
-        setAiCalories(match[0]);
-      } else {
-        setAiCalories("--");
-      }
-    } catch (error) {
-      console.error("Lỗi AI tính calo:", error);
-      setAiCalories("--");
-    } finally {
-      setIsCalculatingCalories(false);
-    }
-  }, [ingredientsData, item.servings]);
-
-  // Gọi hàm AI tự động ngay khi dữ liệu nguyên liệu vừa tải xong
-  useEffect(() => {
-    if (ingredientsData.length > 0) {
-      calculateCaloriesWithAI();
-    }
-  }, [ingredientsData, calculateCaloriesWithAI]);
-
-  // --- CÁC HÀM XỬ LÝ SỰ KIỆN KHÁC ---
+  // --- 5. LOGIC XỬ LÝ ---
   const handleSaveRecipe = async () => {
     const user = auth.currentUser;
-    if (!user) {
-        Alert.alert("Yêu cầu đăng nhập", "Bạn cần đăng nhập để lưu món ăn.");
-        return;
-    }
-    const docId = `${user.uid}_${item.recipeId}`;
-    const docRef = doc(db, "favorites", docId);
+    if (!user) return Alert.alert("Thông báo", "Vui lòng đăng nhập!");
+    const currentId = item?.id || item?.recipeId;
+    const docRef = doc(db, "favorites", `${user.uid}_${currentId}`);
     try {
-        if (isSaved) {
-            await deleteDoc(docRef);
-            setIsSaved(false);
-        } else {
-            const favoriteData = {
-                recipeId: item.recipeId,
-                title: item.title,
-                photo_url: item.photo_url,
-                time: item.time,
-                servings: item.servings,
-                categoryId: item.categoryId,
-                userId: user.uid,
-                addedAt: serverTimestamp()
-            };
-            await setDoc(docRef, favoriteData);
-            setIsSaved(true);
-            Alert.alert("Đã lưu", "Đã thêm vào danh sách món ăn yêu thích!");
-        }
-    } catch (error) { console.error(error); }
-  };
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerTransparent: true,
-      headerTitle: "",
-      headerTintColor: "#fff",
-      headerLeft: () => <View style={styles.backButtonWrapper}><BackButton onPress={() => navigation.goBack()} /></View>,
-      headerRight: () => (
-        <TouchableOpacity style={styles.saveButtonWrapper} onPress={handleSaveRecipe}>
-            <Image 
-                source={{ uri: isSaved ? 'https://cdn-icons-png.flaticon.com/512/833/833472.png' : 'https://cdn-icons-png.flaticon.com/512/1077/1077035.png' }} 
-                style={[styles.saveIcon, isSaved ? { tintColor: '#FF4757' } : { tintColor: '#FFF' }]} 
-            />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, isSaved]);
-
-  const checkIngredientAvailable = (recipeIngName, pantryList) => {
-    const normalizedRecipeName = normalizeName(recipeIngName);
-    return pantryList.some(pantryItem => {
-        const normalizedPantryName = normalizeName(pantryItem.name);
-        return normalizedPantryName.includes(normalizedRecipeName) || normalizedRecipeName.includes(normalizedPantryName);
-    });
-  };
-
-  const parseQuantity = (quantityString) => {
-    if (!quantityString) return { qty: 1, unit: 'cái' };
-    const regex = /^(\d+(?:[.,]\d+)?)\s*(.*)$/;
-    const match = quantityString.toString().trim().match(regex);
-    if (match) return { qty: parseFloat(match[1].replace(',', '.')), unit: match[2].trim() || 'cái' };
-    return { qty: 1, unit: quantityString };
-  };
-
-  const addToShoppingList = async (missingItems) => {
-    const user = auth.currentUser;
-    if (!user) return;
-    try {
-        const batch = writeBatch(db);
-        missingItems.forEach((item) => {
-            const { qty, unit } = parseQuantity(item[1]);
-            const newDocRef = doc(collection(db, "shoppingList"));
-            batch.set(newDocRef, {
-                email: user.email,
-                name: item[0].name,
-                quantity: qty,
-                unit: unit,
-                status: 'pending',
-                photo_url: item[0].photo_url || null,
-                updatedAt: new Date()
-            });
-        });
-        await batch.commit();
-        Alert.alert("Thành công", `Đã thêm ${missingItems.length} món vào giỏ!`);
-    } catch (error) { console.error(error); }
+      if (isSaved) { 
+        await deleteDoc(docRef); setIsSaved(false); 
+      } else { 
+        await setDoc(docRef, { ...item, recipeId: currentId, email: user.email, savedAt: serverTimestamp() }); 
+        setIsSaved(true); 
+      }
+    } catch (e) { console.error(e); }
   };
 
   const handleStartCooking = () => {
-    const missing = ingredientsData.filter(ri => !checkIngredientAvailable(ri[0]?.name, pantryData));
-    if (missing.length === 0) Alert.alert("Tuyệt vời!", "Đã đủ nguyên liệu! 🍳");
-    else {
-      Alert.alert("Thiếu nguyên liệu", `Bạn thiếu: ${missing.map(m => m[0].name).join(", ")}`, [
-          { text: "Hủy", style: "cancel" },
-          { text: "Tiếp tục nấu", onPress: () => console.log("Cooking") },
-          { text: "Thêm vào giỏ", onPress: () => addToShoppingList(missing) }
-      ]);
+    const missing = ingredientsData.filter(ingArr => !checkAvailable(ingArr[0]?.name));
+    if (missing.length === 0) {
+      navigation.navigate("CookAI", { 
+        steps: item.description?.split('\n'), 
+        title: item.title,
+        ingredients: ingredientsData.map(ing => ({
+          name: ing[0]?.name, quantity: ing[1], photo_url: ing[0]?.photo_url
+        }))
+      });
+    } else {
+      setMissingItems(missing);
+      setShowConfirmModal(true);
     }
   };
 
-  const renderHorizontalIngredient = (ingredientArr, index) => {
-    const data = ingredientArr[0]; 
-    const quantity = ingredientArr[1]; 
-    if (!data) return null;
-    const isAvailable = checkIngredientAvailable(data.name, pantryData);
-
-    return (
-        <View key={index} style={customStyles.ingredientItemContainer}>
-            <TouchableOpacity onPress={() => navigation.navigate("Ingredient", { ingredient: data })}>
-                <View style={[
-                    customStyles.ingredientCircle, 
-                    isAvailable ? { borderColor: '#32ba7c', borderWidth: 2 } : { borderColor: '#F0F0F0', borderWidth: 1 }
-                ]}>
-                    <Image source={{ uri: data.photo_url || 'https://cdn-icons-png.flaticon.com/512/706/706164.png' }} style={customStyles.ingredientImage} />
-                    {isAvailable && (
-                        <View style={customStyles.statusBadge}>
-                             <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/190/190411.png'}} style={{width: 10, height: 10, tintColor: 'white'}} />
-                        </View>
-                    )}
-                </View>
-            </TouchableOpacity>
-            <Text style={[customStyles.ingredientNameText, isAvailable && { fontWeight: '800', color: '#32ba7c' }]} numberOfLines={2}>{data.name}</Text>
-            <Text style={customStyles.ingredientQtyText}>{quantity}</Text>
-        </View>
-    );
+  const addToShoppingList = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const promises = missingItems.map(ing => {
+        const data = ing[0];
+        const qtyStr = ing[1];
+        return addDoc(collection(db, "shoppingList"), {
+          email: user.email,
+          name: data.name,
+          photo_url: data.photo_url || "https://cdn-icons-png.flaticon.com/512/2927/2927347.png",
+          quantity: qtyStr.replace(/[^0-9]/g, '') || 1,
+          unit: qtyStr.replace(/[0-9]/g, '').trim() || "đv",
+          status: "pending",
+          type: "missing_from_recipe",
+          sourceRecipe: item.title,
+          updatedAt: serverTimestamp()
+        });
+      });
+      await Promise.all(promises);
+      setShowConfirmModal(false);
+      navigation.navigate("ShoppingList");
+    } catch (e) { Alert.alert("Lỗi", "Không thể thêm vào giỏ hàng."); }
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={ui.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        refreshControl={
-            <RefreshControl 
-                refreshing={isRefreshing} 
-                onRefresh={onRefresh} 
-                tintColor="#000"   
-                colors={['#000']}  
-                progressBackgroundColor="#FFF" 
-            />
-        }
+        showsVerticalScrollIndicator={false} 
+        removeClippedSubviews={true} // TỐI ƯU: Tự động xóa các view bị khuất
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={loadAllData} />}
       >
-        <View style={styles.carouselWrapper}>
-          <Carousel
-            width={viewportWidth} height={viewportHeight * 0.45}
-            data={(item.photosArray?.length > 0) ? item.photosArray : [item.photo_url]}
-            renderItem={({ item }) => (
-                <View style={styles.imageContainer}>
-                  <Image style={styles.image} source={{ uri: item }} resizeMode="cover" />
-                  <View style={styles.imageOverlay} />
-                </View>
-            )}
-            onProgressChange={progress}
+        <View style={ui.heroWrap}>
+          <Carousel 
+            loop
+            width={viewportWidth} 
+            height={viewportHeight * 0.3} 
+            autoPlay={false}
+            data={item.photosArray || [item.photo_url]} 
+            scrollAnimationDuration={1000}
+            renderItem={({ item: url }) => (
+              <Image source={{ uri: url }} style={ui.mainPhoto} />
+            )} 
           />
-          <View style={styles.paginationWrapper}>
-            <Pagination.Basic progress={progress} data={(item.photosArray?.length > 0) ? item.photosArray : [item.photo_url]} dotStyle={styles.paginationDot} activeDotStyle={styles.paginationActiveDot} />
+          <View style={ui.navOverlay}>
+            <View style={ui.backBtnWrapper}><BackButton onPress={() => navigation.goBack()} /></View>
+            <TouchableOpacity style={ui.actionCircle} onPress={handleSaveRecipe}>
+              <Text style={{fontSize: 24, color: isSaved ? '#FF3B30' : '#FFF'}}>{isSaved ? '♥' : '♡'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.infoRecipeContainer}>
-          <View style={styles.indicatorBar} />
-          <Text style={styles.recipeTitle}>{item.title}</Text>
-          <View style={styles.metaContainer}>
-            <TouchableOpacity style={styles.categoryTag}><Text style={styles.categoryText}>{activeCategory?.name.toUpperCase() || "LOADING..."}</Text></TouchableOpacity>
-            
-            <View style={styles.metaItem}>
-              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/2088/2088617.png'}} style={styles.metaIcon} />
-              <Text style={styles.metaText}>{item.time} phút</Text>
-            </View>
-            
-            <View style={[styles.metaItem, { marginLeft: 15 }]}>
-              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/1250/1250689.png'}} style={styles.metaIcon} />
-              <Text style={styles.metaText}>{item.servings || "2"} người</Text>
-            </View>
-
-            {/* 🔥 KHU VỰC HIỂN THỊ CALO DO AI TÍNH */}
-            <View style={[styles.metaItem, { marginLeft: 15 }]}>
-              <Text style={{ fontSize: 14, marginRight: 4 }}>🔥</Text>
-              {isCalculatingCalories ? (
-                <ActivityIndicator size="small" color="#ff9800" />
-              ) : (
-                <Text style={styles.metaText}>{aiCalories ? `${aiCalories} Kcal` : '-- Kcal'}</Text>
-              )}
-            </View>
-
+        <View style={ui.contentBody}>
+          <Text style={ui.mainTitle}>{item?.title}</Text>
+          <View style={ui.quickInfoBar}>
+            <View style={ui.infoTag}><Text style={ui.infoTagText}>{activeCategory?.name || 'Món ăn'}</Text></View>
+            <View style={ui.vDivider} /><Text style={ui.infoItem}>⏱ {item?.time}</Text>
+            <View style={ui.vDivider} /><Text style={ui.infoItem}>👥 {item?.servings}</Text>
+            <View style={ui.vDivider} /><Text style={ui.infoItem}>🔥 {displayCalories} kcal</Text>
           </View>
-          <View style={styles.divider} />
 
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Nguyên liệu cần thiết</Text>
-            {isLoadingIngredients ? <ActivityIndicator size="small" color="#32ba7c" /> : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10, paddingRight: 20 }}>
-                    {ingredientsData.map((ing, index) => renderHorizontalIngredient(ing, index))}
-                </ScrollView>
+          <View style={ui.sectionDivider} />
+          
+          <View style={ui.section}>
+            <View style={ui.sectionHeader}>
+              <Text style={ui.sectionTitle}>Nguyên liệu</Text>
+              <Text style={ui.sectionSub}>{ingredientsData.length} món</Text>
+            </View>
+            {isLoadingIngredients ? <ActivityIndicator color="#000" /> : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ui.ingListWrap}>
+                {ingredientsData.map((ing, idx) => (
+                  <IngredientItem 
+                    key={`${item.id}-ing-${idx}`}
+                    data={ing[0]}
+                    qty={ing[1]}
+                    isAvailable={checkAvailable(ing[0]?.name)}
+                    onPress={() => navigation.navigate("Ingredient", { ingredient: ing[0] })}
+                  />
+                ))}
+              </ScrollView>
             )}
           </View>
 
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Cách làm</Text>
-            <Text style={styles.descriptionText}>{item.description || "Chưa có hướng dẫn."}</Text>
+          <View style={ui.sectionDivider} />
+          <View style={ui.section}>
+            <Text style={ui.sectionTitle}>Hướng dẫn</Text>
+            <Text style={ui.descText}>{item?.description}</Text>
           </View>
+          <View style={{ height: 140 }} />
         </View>
       </ScrollView>
 
-      <View style={styles.stickyFooter}>
-        <TouchableOpacity style={styles.startCookingBtn} onPress={handleStartCooking}>
-          <Text style={styles.startCookingText}>Bắt đầu nấu ngay</Text>
+      <View style={ui.footer}>
+        <TouchableOpacity style={ui.primaryBtn} onPress={handleStartCooking}>
+          <Text style={ui.primaryBtnText}>BẮT ĐẦU NẤU 👩‍🍳</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal visible={showConfirmModal} transparent animationType="fade">
+        <View style={ui.modalOverlay}>
+          <View style={ui.modalContainer}>
+            <View style={ui.modalIconBg}><Text style={{fontSize: 30}}>🛒</Text></View>
+            <Text style={ui.modalTitle}>Thiếu nguyên liệu!</Text>
+            <Text style={ui.modalContentText}>
+              Bạn còn thiếu {missingItems.length} món. Bạn muốn thêm vào giỏ hay vẫn tiếp tục nấu?
+            </Text>
+            <View style={ui.btnRow}>
+              <TouchableOpacity style={[ui.dialogBtn, {backgroundColor: '#F3F4F6'}]} onPress={() => setShowConfirmModal(false)}>
+                <Text style={[ui.dialogBtnText, {color: '#4B5563'}]}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[ui.dialogBtn, {backgroundColor: '#FEF3C7'}]} onPress={addToShoppingList}>
+                <Text style={[ui.dialogBtnText, {color: '#D97706'}]}>+ Giỏ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[ui.dialogBtn, {backgroundColor: '#D1FAE5'}]} 
+                onPress={() => {
+                  setShowConfirmModal(false);
+                  navigation.navigate("CookAI", { steps: item.description?.split('\n'), title: item.title });
+                }}
+              >
+                <Text style={[ui.dialogBtnText, {color: '#059669'}]}>Vẫn nấu</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-const customStyles = StyleSheet.create({
-    ingredientItemContainer: { alignItems: 'center', marginRight: 20, width: 75 },
-    ingredientCircle: { width: 65, height: 65, borderRadius: 32.5, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', marginBottom: 8, elevation: 3, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 3 },
-    ingredientImage: { width: 35, height: 35, resizeMode: 'contain' },
-    ingredientNameText: { fontSize: 11, color: '#333', textAlign: 'center', height: 30 },
-    ingredientQtyText: { fontSize: 10, color: '#888', marginTop: 2 },
-    statusBadge: { position: 'absolute', bottom: -2, right: -2, backgroundColor: '#32ba7c', width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' }
+// ... styles (giữ nguyên ui StyleSheet từ code trước của bạn)
+const ui = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  heroWrap: { height: viewportHeight * 0.3 },
+  mainPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
+  navOverlay: { position: 'absolute', top: 35, left: 10, right: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 },
+  actionCircle: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+  contentBody: { paddingHorizontal: 20, paddingTop: 20, alignItems: 'center' },
+  mainTitle: { fontSize: 26, fontWeight: '800', color: '#1A1A1A', marginBottom: 15, textAlign: 'center', width: '100%' },
+  quickInfoBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F8F8', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, width: '95%' },
+  infoTag: { backgroundColor: '#000', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  infoTagText: { color: '#FFF', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  vDivider: { width: 1, height: 12, backgroundColor: '#DDD', marginHorizontal: 12 },
+  infoItem: { fontSize: 13, fontWeight: '600', color: '#555' },
+  sectionDivider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 20, width: '100%' },
+  section: { marginVertical: 0, width: '100%' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
+  sectionSub: { fontSize: 12, color: '#999' },
+  ingListWrap: { paddingRight: 20 },
+  ingCard: { alignItems: 'center', marginRight: 18, width: 70 },
+  ingCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#F9F9F9', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: '#F0F0F0' },
+  ingCircleActive: { borderColor: '#32ba7c', backgroundColor: '#F0F9F4' },
+  ingImage: { width: 32, height: 32, resizeMode: 'contain' },
+  checkBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#32ba7c', width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
+  checkText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
+  ingName: { fontSize: 11, color: '#444', fontWeight: '500', textAlign: 'center' },
+  textSuccess: { color: '#32ba7c', fontWeight: '700' }, 
+  ingQty: { fontSize: 10, color: '#999', marginTop: 2 },
+  descText: { fontSize: 15, lineHeight: 24, color: '#666', textAlign: 'left', width: '100%' },
+  footer: { position: 'absolute', bottom: 0, width: '100%', paddingHorizontal: 20, paddingBottom: 30, paddingTop: 15, backgroundColor: 'rgba(255,255,255,0.98)' },
+  primaryBtn: { backgroundColor: '#1A1A1A', height: 56, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  primaryBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700', letterSpacing: 1 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  modalContainer: { width: '88%', backgroundColor: 'white', borderRadius: 30, padding: 25, alignItems: 'center' },
+  modalIconBg: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFF7ED', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1F2937', marginBottom: 10 },
+  modalContentText: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 25, lineHeight: 20 },
+  btnRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 8 },
+  dialogBtn: { flex: 1, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  dialogBtnText: { fontSize: 13, fontWeight: 'bold' }
 });

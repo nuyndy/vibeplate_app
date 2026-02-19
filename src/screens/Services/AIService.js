@@ -22,7 +22,6 @@ const safeParseJSON = (str) => {
   }
 };
 
-// --- 1. LẤY TỦ LẠNH ---
 export const getUserFridge = async () => {
   try {
     const user = auth.currentUser;
@@ -33,15 +32,13 @@ export const getUserFridge = async () => {
   } catch (e) { return []; }
 };
 
-// --- 2. LẤY DỊ ỨNG ---
 export const getUserPreferences = async () => {
   try {
     const user = auth.currentUser;
     if (!user || !user.email) return null;
     const q = query(collection(db, "user_preferences"), where("email", "==", user.email));
     const snap = await getDocs(q);
-    if (snap.empty) return null;
-    return snap.docs[0].data();
+    return snap.empty ? null : snap.docs[0].data();
   } catch (e) { return null; }
 };
 
@@ -85,8 +82,8 @@ export const getAppRecipes = async () => {
 // --- 6. HÀM TẠO CÔNG THỨC THÔNG MINH ---
 export const generateRecipeJSON = async (userRequest) => {
   try {
-    const [fridge, prefs, favorites, mood, appRecipes] = await Promise.all([
-      getUserFridge(), getUserPreferences(), getUserFavorites(), getUserMood(), getAppRecipes()
+    const [fridge, prefs, appRecipes] = await Promise.all([
+      getUserFridge(), getUserPreferences(), getAppRecipes()
     ]);
 
     const strFridge = fridge.length > 0 ? fridge.join(", ") : "Trống";
@@ -153,7 +150,6 @@ export const generateRecipeJSON = async (userRequest) => {
   }
 };
 
-// --- 7. HÀM CHAT TỰ DO ---
 export const sendMessageToGemini = async (text, history) => {
   try {
     const response = await fetch(API_URL, {

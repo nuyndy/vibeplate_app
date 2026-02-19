@@ -1,17 +1,19 @@
-import React, { useLayoutEffect, useState, useEffect, useCallback } from 'react'; // Thêm useCallback
-import { 
-  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, SafeAreaView, 
-  Alert, ActivityIndicator, TextInput, Keyboard, RefreshControl // Thêm RefreshControl
+import React, { useLayoutEffect, useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, SafeAreaView,
+  Alert, ActivityIndicator, TextInput, Keyboard, RefreshControl
 } from 'react-native';
 
 // --- FIREBASE ---
 import { auth, db } from '../../firebase/firebaseConfig';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-// --- DATA MẪU ---
-const COMMON_ALLERGIES = ["Hải sản", "Lạc", "Sữa", "Trứng", "Gluten", "Đậu nành", "Vừng"];
-const COMMON_TASTES = ["Chua", "Cay", "Mặn", "Ngọt", "Đắng", "Béo ngậy", "Thanh đạm"];
-const COMMON_INGREDIENTS = ["Hành tây", "Tỏi", "Rau mùi", "Gừng", "Tiêu", "Hành lá", "Mắm tôm"];
+// --- CONSTANTS ---
+const COMMON_DATA = {
+  ALLERGIES: ["Hải sản", "Lạc", "Sữa", "Trứng", "Gluten", "Đậu nành", "Vừng"],
+  TASTES: ["Chua", "Cay", "Mặn", "Ngọt", "Đắng", "Béo ngậy", "Thanh đạm"],
+  INGREDIENTS: ["Hành tây", "Tỏi", "Rau mùi", "Gừng", "Tiêu", "Hành lá", "Mắm tôm"]
+};
 
 const COLORS = {
   primary: '#000000',
@@ -21,107 +23,170 @@ const COLORS = {
   textSub: '#A0A5B9',
   border: '#E8E8E8',
   inputBg: '#F5F6FA',
+  white: '#FFFFFF',
 };
 
+// --- SUB-COMPONENT: TAG ITEM (Tách nhỏ để tối ưu re-render) ---
+const Tag = React.memo(({ item, onPress, isActive }) => (
+  <TouchableOpacity
+    style={[styles.tag, isActive ? styles.activeTag : styles.suggestionTag]}
+    onPress={() => onPress(item)}
+  >
+    <Text style={[styles.tagText, isActive ? styles.activeTagText : styles.suggestionText]}>
+      {isActive ? item : `+ ${item}`}
+    </Text>
+    {isActive && (
+      <View style={styles.removeIconBg}>
+        <Text style={styles.removeIcon}>✕</Text>
+      </View>
+    )}
+  </TouchableOpacity>
+));
+
+// --- SUB-COMPONENT: SECTION ---
+const Section = React.memo(({ title, icon, suggestions, selectedList, onAdd, onRemove, placeholder }) => {
+  const [inputValue, setInputValue] = useState('');
+
+  const handleAdd = useCallback(() => {
+    if (inputValue.trim()) {
+      onAdd(inputValue.trim());
+      setInputValue('');
+      Keyboard.dismiss();
+    }
+  }, [inputValue, onAdd]);
+
+  // Lọc ra các gợi ý chưa được chọn
+  const filteredSuggestions = useMemo(() => 
+    suggestions.filter(item => !selectedList.includes(item)), 
+    [suggestions, selectedList]
+  );
+
+  return (
+    <View style={styles.sectionContainer}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionIcon}>{icon}</Text>
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+
+      <View style={styles.selectedArea}>
+        {selectedList.length === 0 ? (
+          <Text style={styles.emptyText}>Chưa chọn mục nào</Text>
+        ) : (
+          <View style={styles.tagsWrapper}>
+            {selectedList.map((item) => (
+              <Tag key={item} item={item} isActive onPress={onRemove} />
+            ))}
+          </View>
+        )}
+      </View>
+
+      <View style={styles.inputRow}>
+        <TextInput
+          style={styles.input}
+          placeholder={placeholder}
+          placeholderTextColor={COLORS.textSub}
+          value={inputValue}
+          onChangeText={setInputValue}
+          onSubmitEditing={handleAdd}
+        />
+        <TouchableOpacity style={styles.addBtn} onPress={handleAdd}>
+          <Text style={styles.addBtnText}>Thêm</Text>
+        </TouchableOpacity>
+      </View>
+
+      {filteredSuggestions.length > 0 && (
+        <>
+          <Text style={styles.suggestionLabel}>Gợi ý phổ biến:</Text>
+          <View style={styles.tagsWrapper}>
+            {filteredSuggestions.map((item) => (
+              <Tag key={item} item={item} onPress={onAdd} />
+            ))}
+          </View>
+        </>
+      )}
+    </View>
+  );
+});
+
+// --- MAIN COMPONENT ---
 export default function Personalization({ navigation }) {
   const user = auth.currentUser;
+  const [preferences, setPreferences] = useState({
+    allergies: [],
+    favoriteTastes: [],
+    dislikedIngredients: []
+  });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // --- STATES ---
-  const [allergies, setAllergies] = useState([]);
-  const [favoriteTastes, setFavoriteTastes] = useState([]);
-  const [dislikedIngredients, setDislikedIngredients] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false); // State quản lý reload
-
-  // --- 1. CONFIG HEADER ---
+  // 1. Config Header
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTitle: "Khẩu vị của bạn",
-      headerStyle: { 
-        backgroundColor: '#FFFFFF', 
-        elevation: 0,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0' 
-      },
-      headerTintColor: COLORS.textMain,
+      headerStyle: styles.headerStyle,
       headerLeft: () => (
-         <TouchableOpacity onPress={() => navigation.goBack()} style={{marginLeft: 20, padding: 5}}>
-           <Image 
-             source={{uri: 'https://cdn-icons-png.flaticon.com/512/271/271220.png'}} 
-             style={{width: 20, height: 20, tintColor: COLORS.textMain}} 
-           />
-         </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBackBtn}>
+          <Image 
+            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/271/271220.png' }} 
+            style={styles.backIcon} 
+          />
+        </TouchableOpacity>
       ),
     });
   }, [navigation]);
 
-  // --- 2. HÀM FETCH DATA (Tách riêng để dùng chung) ---
-  const fetchPreferences = async (isRefreshingAction = false) => {
-    if (!user || !user.email) return;
-    
-    // Nếu không phải là hành động vuốt để reload thì mới hiện loading chính
-    if (!isRefreshingAction) setLoading(true);
+  // 2. Fetch Data Logic
+  const fetchPreferences = useCallback(async (isSilent = false) => {
+    if (!user?.uid) return;
+    if (!isSilent) setLoading(true);
 
     try {
-      const docId = user.email.toLowerCase(); 
-      const docRef = doc(db, "user_preferences", docId);
+      const docRef = doc(db, "user_preferences", user.uid); // Dùng UID tốt hơn Email
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setAllergies(data.allergies || []);
-        setFavoriteTastes(data.favoriteTastes || []);
-        setDislikedIngredients(data.dislikedIngredients || []);
+        setPreferences({
+          allergies: data.allergies || [],
+          favoriteTastes: data.favoriteTastes || [],
+          dislikedIngredients: data.dislikedIngredients || []
+        });
       }
     } catch (error) {
-      console.log("Lỗi tải data:", error);
+      console.error("Fetch error:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchPreferences();
-  }, [user]);
+  }, [fetchPreferences]);
 
-  // --- 3. XỬ LÝ REFRESH (VUỐT XUỐNG) ---
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchPreferences(true);
+  // 3. Handlers
+  const updateList = useCallback((key, value, action) => {
+    setPreferences(prev => {
+      const currentList = prev[key];
+      if (action === 'add') {
+        return currentList.includes(value) ? prev : { ...prev, [key]: [...currentList, value] };
+      }
+      return { ...prev, [key]: currentList.filter(i => i !== value) };
+    });
   }, []);
 
-  // --- LOGIC THÊM / XOÁ ---
-  const addItem = (list, setList, item) => {
-    const cleanItem = item.trim();
-    if (cleanItem && !list.includes(cleanItem)) {
-      setList([...list, cleanItem]);
-    }
-  };
-
-  const removeItem = (list, setList, item) => {
-    setList(list.filter(i => i !== item));
-  };
-
-  // --- 4. LƯU DỮ LIỆU ---
   const handleSave = async () => {
-    if (!user || !user.email) return;
+    if (!user?.uid) return;
     setLoading(true);
     try {
-      const docId = user.email.toLowerCase();
-      const docRef = doc(db, "user_preferences", docId);
-
+      const docRef = doc(db, "user_preferences", user.uid);
       await setDoc(docRef, {
+        ...preferences,
         email: user.email,
-        allergies,
-        favoriteTastes,
-        dislikedIngredients,
-        updatedAt: new Date(),
+        updatedAt: serverTimestamp(), 
       }, { merge: true });
 
-      Alert.alert("Thành công", "Đã lưu sở thích ăn uống của bạn!", [
-        { text: "OK", onPress: () => navigation.goBack() }
-      ]);
+      Alert.alert("Thành công", "Đã lưu sở thích của bạn!", [{ text: "OK", onPress: () => navigation.goBack() }]);
     } catch (error) {
       Alert.alert("Lỗi", error.message);
     } finally {
@@ -129,79 +194,9 @@ export default function Personalization({ navigation }) {
     }
   };
 
-  // --- COMPONENT CON: SECTION ---
-  const Section = ({ title, icon, suggestions, selectedList, setList, placeholder }) => {
-    const [inputValue, setInputValue] = useState('');
-
-    const handleAddInput = () => {
-        addItem(selectedList, setList, inputValue);
-        setInputValue(''); 
-        Keyboard.dismiss();
-    };
-
-    return (
-      <View style={styles.sectionContainer}>
-        <View style={styles.sectionHeader}>
-           <Text style={styles.sectionIcon}>{icon}</Text>
-           <Text style={styles.sectionTitle}>{title}</Text>
-        </View>
-
-        <View style={styles.selectedArea}>
-            {selectedList.length === 0 ? (
-                <Text style={styles.emptyText}>Chưa chọn mục nào</Text>
-            ) : (
-                <View style={styles.tagsWrapper}>
-                    {selectedList.map((item, index) => (
-                        <TouchableOpacity 
-                            key={index} 
-                            style={styles.activeTag} 
-                            onPress={() => removeItem(selectedList, setList, item)}
-                        >
-                            <Text style={styles.activeTagText}>{item}</Text>
-                            <View style={styles.removeIconBg}>
-                                <Text style={styles.removeIcon}>✕</Text>
-                            </View>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            )}
-        </View>
-
-        <View style={styles.inputRow}>
-            <TextInput 
-                style={styles.input}
-                placeholder={placeholder}
-                placeholderTextColor="#A0A5B9"
-                value={inputValue}
-                onChangeText={setInputValue}
-                onSubmitEditing={handleAddInput}
-            />
-            <TouchableOpacity style={styles.addBtn} onPress={handleAddInput}>
-                <Text style={styles.addBtnText}>Thêm</Text>
-            </TouchableOpacity>
-        </View>
-
-        <Text style={styles.suggestionLabel}>Gợi ý phổ biến:</Text>
-        <View style={styles.tagsWrapper}>
-            {suggestions
-                .filter(item => !selectedList.includes(item))
-                .map((item, index) => (
-                <TouchableOpacity 
-                    key={index}
-                    style={styles.suggestionTag}
-                    onPress={() => addItem(selectedList, setList, item)}
-                >
-                    <Text style={styles.suggestionText}>+ {item}</Text>
-                </TouchableOpacity>
-            ))}
-        </View>
-      </View>
-    );
-  };
-
   if (loading && !refreshing) {
     return (
-      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg}}>
+      <View style={styles.center}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
@@ -212,57 +207,49 @@ export default function Personalization({ navigation }) {
       <ScrollView 
         contentContainerStyle={styles.scrollContent} 
         showsVerticalScrollIndicator={false}
-        // --- TÍCH HỢP PULL TO REFRESH ---
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.primary]} // Android
-            tintColor={COLORS.primary} // iOS
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPreferences(true); }} />
         }
       >
         <Section 
           title="Dị ứng / Kiêng kỵ" 
           icon="⚠️"
           placeholder="Nhập món bạn bị dị ứng..."
-          suggestions={COMMON_ALLERGIES}
-          selectedList={allergies}
-          setList={setAllergies}
+          suggestions={COMMON_DATA.ALLERGIES}
+          selectedList={preferences.allergies}
+          onAdd={(val) => updateList('allergies', val, 'add')}
+          onRemove={(val) => updateList('allergies', val, 'remove')}
         />
 
         <Section 
           title="Vị yêu thích" 
           icon="😋"
           placeholder="VD: Chua cay, Ngọt..."
-          suggestions={COMMON_TASTES}
-          selectedList={favoriteTastes}
-          setList={setFavoriteTastes}
+          suggestions={COMMON_DATA.TASTES}
+          selectedList={preferences.favoriteTastes}
+          onAdd={(val) => updateList('favoriteTastes', val, 'add')}
+          onRemove={(val) => updateList('favoriteTastes', val, 'remove')}
         />
 
         <Section 
           title="Không thích ăn (Ghét)" 
           icon="🚫"
           placeholder="VD: Hành, Tỏi, Ớt..."
-          suggestions={COMMON_INGREDIENTS}
-          selectedList={dislikedIngredients}
-          setList={setDislikedIngredients}
+          suggestions={COMMON_DATA.INGREDIENTS}
+          selectedList={preferences.dislikedIngredients}
+          onAdd={(val) => updateList('dislikedIngredients', val, 'add')}
+          onRemove={(val) => updateList('dislikedIngredients', val, 'remove')}
         />
-
-        <View style={{height: 100}} />
+        <View style={{ height: 100 }} />
       </ScrollView>
 
       <View style={styles.footer}>
         <TouchableOpacity 
-            style={[styles.saveBtn, loading && {opacity: 0.7}]} 
-            onPress={handleSave}
-            disabled={loading}
+          style={[styles.saveBtn, loading && styles.disabledBtn]} 
+          onPress={handleSave}
+          disabled={loading}
         >
-          {loading ? (
-             <ActivityIndicator size="small" color="#fff" />
-          ) : (
-             <Text style={styles.saveBtnText}>Lưu thay đổi</Text>
-          )}
+          {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveBtnText}>Lưu thay đổi</Text>}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -271,66 +258,44 @@ export default function Personalization({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 100 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 100 },
+  headerStyle: { backgroundColor: COLORS.white, elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerBackBtn: { marginLeft: 20, padding: 5 },
+  backIcon: { width: 20, height: 20, tintColor: COLORS.textMain },
   
   sectionContainer: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    elevation: 2,
+    backgroundColor: COLORS.card, borderRadius: 16, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: '#F0F0F0', elevation: 2, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   sectionIcon: { fontSize: 20, marginRight: 10 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.textMain },
   
   selectedArea: { minHeight: 40, marginBottom: 15 },
-  emptyText: { fontSize: 13, color: '#ccc', fontStyle: 'italic', marginTop: 5 },
-  activeTag: {
-    backgroundColor: COLORS.primary,
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 8, paddingHorizontal: 12,
-    borderRadius: 20, marginRight: 8, marginBottom: 8
-  },
-  activeTagText: { color: '#fff', fontWeight: '600', fontSize: 13, marginRight: 6 },
-  removeIconBg: {
-    backgroundColor: 'rgba(255,255,255,0.2)', width: 16, height: 16, borderRadius: 8,
-    justifyContent: 'center', alignItems: 'center'
-  },
-  removeIcon: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  emptyText: { fontSize: 13, color: COLORS.textSub, fontStyle: 'italic', marginTop: 5 },
+  
+  tagsWrapper: { flexDirection: 'row', flexWrap: 'wrap' },
+  tag: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, marginRight: 8, marginBottom: 8 },
+  activeTag: { backgroundColor: COLORS.primary },
+  suggestionTag: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
+  tagText: { fontWeight: '600', fontSize: 13 },
+  activeTagText: { color: COLORS.white, marginRight: 6 },
+  suggestionText: { color: '#666' },
+
+  removeIconBg: { backgroundColor: 'rgba(255,255,255,0.2)', width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  removeIcon: { color: COLORS.white, fontSize: 10, fontWeight: 'bold' },
 
   inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  input: {
-    flex: 1, backgroundColor: COLORS.inputBg,
-    height: 44, borderRadius: 12,
-    paddingHorizontal: 15, fontSize: 14,
-    color: COLORS.textMain, marginRight: 10,
-  },
-  addBtn: {
-    backgroundColor: '#E0E0E0', height: 44, paddingHorizontal: 15,
-    borderRadius: 12, justifyContent: 'center', alignItems: 'center'
-  },
+  input: { flex: 1, backgroundColor: COLORS.inputBg, height: 44, borderRadius: 12, paddingHorizontal: 15, fontSize: 14, color: COLORS.textMain, marginRight: 10 },
+  addBtn: { backgroundColor: '#E0E0E0', height: 44, paddingHorizontal: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   addBtnText: { color: COLORS.textMain, fontWeight: '600', fontSize: 13 },
 
   suggestionLabel: { fontSize: 12, color: COLORS.textSub, marginBottom: 8, fontWeight: '600', textTransform: 'uppercase' },
-  tagsWrapper: { flexDirection: 'row', flexWrap: 'wrap' },
-  suggestionTag: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E8E8E8',
-    paddingVertical: 6, paddingHorizontal: 12,
-    borderRadius: 20, marginRight: 8, marginBottom: 8
-  },
-  suggestionText: { color: '#666', fontSize: 13 },
 
-  footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: 20, backgroundColor: '#fff',
-    borderTopWidth: 1, borderTopColor: '#F0F0F0'
-  },
-  saveBtn: {
-    backgroundColor: COLORS.primary, borderRadius: 14, height: 50,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
+  saveBtn: { backgroundColor: COLORS.primary, borderRadius: 14, height: 50, justifyContent: 'center', alignItems: 'center' },
+  disabledBtn: { opacity: 0.7 },
+  saveBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
 });

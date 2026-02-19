@@ -6,11 +6,11 @@ import HomeBanner from './HomeBanner';
 const { width } = Dimensions.get('window');
 
 const moodOptions = [
-  { key: "happy", label: "Vui vẻ", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203770.png" },
-  { key: "sad", label: "Buồn", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203774.png" },
-  { key: "tired", label: "Mệt mỏi", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203848.png" },
-  { key: "hungry", label: "Đói meo", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203798.png" },
-  { key: "neutral", label: "Bình thường", icon: "https://cdn-icons-png.flaticon.com/512/9203/9203840.png" },
+  { key: "happy", label: "Vui", icon: require("../../../assets/happy.png") },
+  { key: "hungry", label: "Đói", icon: require("../../../assets/hungry.png") },
+  { key: "neutral", label: "OK", icon: require("../../../assets/normal.png") },
+  { key: "tired", label: "Mệt", icon: require("../../../assets/sick.png") },
+  { key: "sad", label: "Buồn", icon: require("../../../assets/cry.png") },  
 ];
 
 export default function HeaderSection({
@@ -32,10 +32,7 @@ export default function HeaderSection({
         isUserScrolling={isUserScrolling}
       />
 
-      {/* --- FLAT DASHBOARD WIDGET --- */}
       <View style={styles.mainWidget}>
-        
-        {/* Row 1: Weather & Greeting */}
         <View style={styles.topRow}>
           <View>
             <Text style={styles.greetingText}>
@@ -56,7 +53,6 @@ export default function HeaderSection({
 
         <View style={styles.divider} />
 
-        {/* Row 2: Mood Selector */}
         <View style={styles.moodRow}>
           {moodOptions.map((m) => {
             const isSelected = mood === m.key;
@@ -67,7 +63,8 @@ export default function HeaderSection({
                 activeOpacity={0.6}
                 style={[styles.moodItem, isSelected && styles.moodItemActive]}
               >
-                <Image source={{ uri: m.icon }} style={styles.moodIcon} />
+                {/* SỬA TẠI ĐÂY: source={m.icon} thay vì {uri: m.icon} */}
+                <Image source={m.icon} style={styles.moodIcon} />
                 <Text style={[styles.moodLabel, isSelected && styles.moodLabelActive]}>
                   {m.label.split(' ')[0]}
                 </Text>
@@ -76,7 +73,6 @@ export default function HeaderSection({
           })}
         </View>
 
-        {/* Row 3: Suggestion Button */}
         <TouchableOpacity 
           style={styles.suggestionBtn} 
           onPress={onOpenSuggestion}
@@ -91,7 +87,6 @@ export default function HeaderSection({
             <Ionicons name="chevron-forward" size={12} color="#FF9800" />
           </View>
         </TouchableOpacity>
-
       </View>
     </View>
   );
@@ -99,17 +94,15 @@ export default function HeaderSection({
 
 const styles = StyleSheet.create({
   headerContainer: { backgroundColor: '#FFF' },
-  
   mainWidget: {
     marginTop: 15,
     marginHorizontal: 15,
     padding: 16,
-    backgroundColor: '#F8F9FA', // Nền xám cực nhẹ để phân biệt với nền trắng của app
+    backgroundColor: '#F8F9FA',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#F0F0F0', // Đường viền mảnh thay cho đổ bóng
+    borderColor: '#F0F0F0',
   },
-
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -120,9 +113,7 @@ const styles = StyleSheet.create({
   weatherInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   subText: { fontSize: 12, color: '#999', marginLeft: 4 },
   tempText: { fontSize: 12, color: '#555', fontWeight: 'bold' },
-
   divider: { height: 1, backgroundColor: '#EEE', marginBottom: 16 },
-
   moodRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   moodItem: { 
     alignItems: 'center', 
@@ -131,14 +122,13 @@ const styles = StyleSheet.create({
     borderRadius: 12 
   },
   moodItemActive: { 
-    backgroundColor: '#FFF', // Khi chọn thì chuyển sang nền trắng nổi bật trên nền xám
+    backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: '#FFE0B2'
   },
-  moodIcon: { width: 24, height: 24, marginBottom: 4 },
+  moodIcon: { width: 50, height: 50, marginBottom: 4 },
   moodLabel: { fontSize: 10, color: '#AAA', fontWeight: '500' },
   moodLabelActive: { color: '#FF9800', fontWeight: '700' },
-
   suggestionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -151,7 +141,6 @@ const styles = StyleSheet.create({
   },
   suggestionLeft: { flexDirection: 'row', alignItems: 'center' },
   suggestionTitle: { fontSize: 14, fontWeight: '700', color: '#333', marginLeft: 10 },
-  
   goBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 

@@ -107,7 +107,6 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 18,
     backgroundColor: 'rgba(0,0,0,0.3)',
-    // Căn giữa nội dung bên trong Overlay
     alignItems: 'center', 
     justifyContent: 'center',
   },
@@ -115,12 +114,10 @@ const styles = StyleSheet.create({
     color: 'white', 
     fontWeight: 'bold', 
     fontSize: 18,
-    // Căn giữa văn bản nếu tiêu đề dài xuống dòng
     textAlign: 'center' 
   },
   moodBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    // Bỏ alignSelf: 'flex-start' để badge tự căn giữa theo textOverlay
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,

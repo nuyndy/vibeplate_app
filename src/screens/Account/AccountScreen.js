@@ -1,269 +1,189 @@
-import React, { useLayoutEffect, useState, useEffect, useCallback } from 'react';
+import React, { useLayoutEffect, useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, 
-  SafeAreaView, ActivityIndicator, RefreshControl // <--- 1. Thêm RefreshControl
+  SafeAreaView, ActivityIndicator, RefreshControl 
 } from 'react-native';
 import MenuImage from '../../components/MenuImage/MenuImage';
-
-// --- IMPORT FIREBASE ---
 import { auth, db } from '../../firebase/firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { doc, collection, query, where, onSnapshot } from 'firebase/firestore'; 
+import { doc, collection, query, where, onSnapshot } from 'firebase/firestore';
 
 const COLORS = {
-  primary: '#000000',     
-  primaryLight: '#d6dbd9', 
-  secondary: '#FFC529',   
-  bg: '#F8F9FD',          
-  card: '#FFFFFF',        
-  textMain: '#1A1D26',    
-  textSub: '#A0A5B9',     
-  danger: '#584343',      
-  dangerBg: '#d3cbcb',
-  admin: '#4A90E2',      
-  adminBg: '#E1F0FF',    
+  primary: '#000', primaryLight: '#d6dbd9', secondary: '#FFC529', bg: '#F8F9FD',
+  card: '#FFF', textMain: '#1A1D26', textSub: '#A0A5B9', danger: '#584343',
+  dangerBg: '#d3cbcb', admin: '#4A90E2', adminBg: '#E1F0FF',
 };
+
+// Memoize StatItem để tránh re-render khi các phần khác của màn hình thay đổi
+const StatItem = memo(({ number, label, onPress }) => (
+  <TouchableOpacity onPress={onPress} style={styles.statItem}>
+    <Text style={styles.statNumber}>{number}</Text>
+    <Text style={styles.statLabel}>{label}</Text>
+  </TouchableOpacity>
+));
 
 export default function AccountScreen({ navigation }) {
   const user = auth.currentUser;
-  
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [favoriteCount, setFavoriteCount] = useState(0);
-  const [contributionCount, setContributionCount] = useState(0);
-  const [isRefreshing, setIsRefreshing] = useState(false); // <--- 2. State reload
-  const [currentAvatar, setCurrentAvatar] = useState(user?.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png');
+  const [userData, setUserData] = useState({
+    isAdmin: false,
+    favoriteCount: 0,
+    contributionCount: 0,
+    avatar: user?.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png'
+  });
+  const [refreshing, setRefreshing] = useState(false);
 
+  // 1. Cấu hình Header
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: '', 
-      headerStyle: { backgroundColor: COLORS.bg, shadowColor: 'transparent', elevation: 0 },
+      title: '',
+      headerStyle: { backgroundColor: COLORS.bg, elevation: 0, shadowOpacity: 0 },
       headerLeft: () => (
-        <View style={{ marginLeft: 10 }}>
-           <MenuImage onPress={() => navigation.openDrawer()} />
+        <View style={{ marginLeft: 15 }}>
+          <MenuImage onPress={() => navigation.openDrawer()} />
         </View>
-      )
+      ),
     });
-  }, []);
+  }, [navigation]);
 
-  // --- 3. HÀM RELOAD ---
+  // 2. Logic làm mới (Refresh)
   const onRefresh = useCallback(async () => {
-    setIsRefreshing(true);
+    setRefreshing(true);
     try {
-      // Ép Firebase cập nhật lại thông tin user auth (như emailVerified, photoURL mới nhất)
-      if (auth.currentUser) {
-        await auth.currentUser.reload();
-      }
-      // Vì chúng ta dùng onSnapshot, các dữ liệu Firestore sẽ tự động cập nhật ngay sau khi reload
-    } catch (error) {
-      console.log("Lỗi làm mới tài khoản:", error);
+      if (auth.currentUser) await auth.currentUser.reload();
+    } catch (e) {
+      console.error(e);
     } finally {
-      setIsRefreshing(false);
+      setRefreshing(false);
     }
   }, []);
 
+  // 3. Hợp nhất các Firebase Listeners (Tăng tốc độ tải dữ liệu)
   useEffect(() => {
     if (!user?.email) return;
-    const userRef = doc(db, "users", user.email.toLowerCase());
-    const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setIsAdmin(data.role === 'admin');
-        if (data.photo_url) setCurrentAvatar(data.photo_url);
-        else if (user.photoURL) setCurrentAvatar(user.photoURL);
+
+    const email = user.email.toLowerCase();
+    
+    // Listeners cho Profile, Favorites và Contributions
+    const unsubUser = onSnapshot(doc(db, "users", email), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setUserData(prev => ({ 
+          ...prev, 
+          isAdmin: data.role === 'admin',
+          avatar: data.photo_url || user.photoURL || prev.avatar
+        }));
       }
     });
-    return () => unsubscribeUser();
-  }, [user]);
 
-  useEffect(() => {
-    if (!user) return;
-    const favQuery = query(collection(db, "favorites"), where("userId", "==", user.uid));
-    const unsubscribeFav = onSnapshot(favQuery, (snapshot) => setFavoriteCount(snapshot.size));
+    const unsubFav = onSnapshot(query(collection(db, "favorites"), where("userId", "==", user.uid)), 
+      (snap) => setUserData(prev => ({ ...prev, favoriteCount: snap.size }))
+    );
 
-    const contribQuery = query(collection(db, "suggested_recipes"), where("authorId", "==", user.email));
-    const unsubscribeContrib = onSnapshot(contribQuery, (snapshot) => setContributionCount(snapshot.size));
+    const unsubContrib = onSnapshot(query(collection(db, "suggested_recipes"), where("authorId", "==", email)), 
+      (snap) => setUserData(prev => ({ ...prev, contributionCount: snap.size }))
+    );
 
-    return () => {
-        unsubscribeFav();
-        unsubscribeContrib();
-    };
+    return () => { unsubUser(); unsubFav(); unsubContrib(); };
   }, [user]);
 
   const handleLogout = () => {
-    Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
+    Alert.alert("Đăng xuất", "Bạn muốn thoát tài khoản?", [
       { text: "Hủy", style: "cancel" },
-      { text: "Đăng xuất", onPress: async () => {
-          try { await signOut(auth); } catch (error) { Alert.alert("Lỗi", error.message); }
-      }}
+      { text: "Đăng xuất", onPress: () => signOut(auth).catch(e => Alert.alert("Lỗi", e.message)) }
     ]);
   };
 
-  const StatItem = ({ number, label, onPress }) => (
-    <TouchableOpacity onPress={onPress} style={{ alignItems: 'center', flex: 1 }}>
-      <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textMain }}>{number}</Text>
-      <Text style={{ fontSize: 12, color: COLORS.textSub, marginTop: 4 }}>{label}</Text>
-    </TouchableOpacity>
-  );
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView 
-        contentContainerStyle={styles.container} 
-        showsVerticalScrollIndicator={false}
-        // --- 4. THÊM REFRESH CONTROL VÀO SCROLLVIEW ---
-        refreshControl={
-          <RefreshControl 
-            refreshing={isRefreshing} 
-            onRefresh={onRefresh} 
-            colors={[COLORS.primary]} // Android
-            tintColor={COLORS.primary} // iOS
-          />
-        }
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
       >
-        
-        {/* PROFILE CARD & STATS */}
         <View style={styles.profileSection}>
-          <View style={styles.avatarContainer}>
-            <Image source={{ uri: currentAvatar }} style={styles.avatar} />
-            {isAdmin && (
-               <View style={[styles.editBadge, {backgroundColor: COLORS.admin}]}>
-                 <Text style={{fontSize: 8, color: '#fff', fontWeight: 'bold'}}>ADMIN</Text>
-               </View>
-            )}
+          <View style={styles.avatarWrapper}>
+            <Image source={{ uri: userData.avatar }} style={styles.avatar} />
+            {userData.isAdmin && <View style={styles.adminBadge}><Text style={styles.adminBadgeText}>ADMIN</Text></View>}
           </View>
-          
-          <Text style={styles.name}>{user?.displayName || "VibePlate Chef"}</Text>
-          <Text style={styles.email}>{user?.email || "No Email"}</Text>
+          <Text style={styles.userName}>{user?.displayName || "VibePlate Chef"}</Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
 
-          <View style={styles.statsContainer}>
-            <StatItem 
-              number={favoriteCount} 
-              label="Món yêu thích" 
-              onPress={() => navigation.navigate('SavedDishes')} 
-            />
-            <View style={styles.dividerVertical} />
-            <StatItem 
-              number={contributionCount} 
-              label="Món đã đóng góp" 
-              onPress={() => navigation.navigate('ContributedDishes')}
-            />
+          <View style={styles.statsCard}>
+            <StatItem number={userData.favoriteCount} label="Yêu thích" onPress={() => navigation.navigate('SavedDishes')} />
+            <View style={styles.vDivider} />
+            <StatItem number={userData.contributionCount} label="Đóng góp" onPress={() => navigation.navigate('ContributedDishes')} />
           </View>
         </View>
 
-        {/* BANNER ĐÓNG GÓP */}
-        <TouchableOpacity style={styles.bannerBtn} onPress={() => navigation.navigate('DishNomination')}>
-          <View style={{flex: 1}}>
-             <Text style={styles.bannerTitle}>Đóng góp công thức 👨‍🍳</Text>
-             <Text style={styles.bannerSub}>Chia sẻ món ngon của bạn tới cộng đồng ngay!</Text>
+        <TouchableOpacity style={styles.banner} onPress={() => navigation.navigate('DishNomination')}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bannerTitle}>Đóng góp công thức 👨‍🍳</Text>
+            <Text style={styles.bannerSub}>Chia sẻ món ngon tới cộng đồng!</Text>
           </View>
-          <View style={styles.bannerIconBox}>
-             <Text style={{fontSize: 24}}>📝</Text>
-          </View>
+          <Text style={styles.bannerEmoji}>📝</Text>
         </TouchableOpacity>
 
-        {/* MENU OPTIONS */}
-        <View style={styles.card}>
-           {isAdmin && (
-             <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AdminDataManagement')}>
-                <View style={[styles.menuIcon, {backgroundColor: COLORS.adminBg}]}>
-                   <Image 
-                     source={{uri: 'https://cdn-icons-png.flaticon.com/512/2345/2345338.png'}} 
-                     style={{width: 20, height: 20, tintColor: COLORS.admin}}
-                   />
-                </View>
-                <Text style={styles.menuText}>Quản lý dữ liệu</Text>
-                <Text style={styles.arrow}>›</Text>
-             </TouchableOpacity>
-           )}
-
-           <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('InfoAccount')}>
-              <View style={[styles.menuIcon, {backgroundColor: COLORS.primaryLight}]}>
-                 <Image 
-                   source={{uri: 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} 
-                   style={{width: 20, height: 20, tintColor: COLORS.primary}}
-                 />
-              </View>
-              <Text style={styles.menuText}>Thông tin tài khoản</Text>
-              <Text style={styles.arrow}>›</Text>
-           </TouchableOpacity>
-           
-           <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('Personalization')}>
-              <View style={[styles.menuIcon, {backgroundColor: '#FFF4E5'}]}> 
-                 <Image 
-                   source={{uri: 'https://cdn-icons-png.flaticon.com/512/2099/2099122.png'}} 
-                   style={{width: 20, height: 20, tintColor: '#FF9F43'}}
-                 />
-              </View>
-              <Text style={styles.menuText}>Cá nhân hóa</Text>
-              <Text style={styles.arrow}>›</Text>
-           </TouchableOpacity>
-
-           <TouchableOpacity style={[styles.menuItem, {borderBottomWidth: 0}]} onPress={handleLogout}>
-              <View style={[styles.menuIcon, {backgroundColor: COLORS.dangerBg}]}>
-                 <Image 
-                   source={{uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png'}} 
-                   style={{width: 20, height: 20, tintColor: COLORS.danger}}
-                 />
-              </View>
-              <Text style={[styles.menuText, {color: COLORS.danger}]}>Đăng xuất</Text>
-           </TouchableOpacity>
+        <View style={styles.menuCard}>
+          {userData.isAdmin && (
+            <MenuItem icon="https://cdn-icons-png.flaticon.com/512/2345/2345338.png" title="Quản lý dữ liệu" 
+              color={COLORS.admin} bg={COLORS.adminBg} onPress={() => navigation.navigate('AdminDataManagement')} />
+          )}
+          <MenuItem icon="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" title="Thông tin tài khoản" 
+            color={COLORS.primary} bg={COLORS.primaryLight} onPress={() => navigation.navigate('InfoAccount')} />
+          <MenuItem icon="https://cdn-icons-png.flaticon.com/512/2099/2099122.png" title="Cá nhân hóa" 
+            color="#FF9F43" bg="#FFF4E5" onPress={() => navigation.navigate('Personalization')} />
+          <MenuItem icon="https://cdn-icons-png.flaticon.com/512/1828/1828479.png" title="Đăng xuất" 
+            color={COLORS.danger} bg={COLORS.dangerBg} onPress={handleLogout} isLast />
         </View>
-
-        <Text style={styles.versionText}>VibePlate v1.0.3</Text>
+        <Text style={styles.version}>VibePlate v1.0.3</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+const MenuItem = ({ icon, title, color, bg, onPress, isLast }) => (
+  <TouchableOpacity style={[styles.menuItem, isLast && { borderBottomWidth: 0 }]} onPress={onPress}>
+    <View style={[styles.menuIconBox, { backgroundColor: bg }]}>
+      <Image source={{ uri: icon }} style={[styles.menuIconImage, { tintColor: color }]} />
+    </View>
+    <Text style={[styles.menuText, { color: color === COLORS.danger ? color : COLORS.textMain }]}>{title}</Text>
+    <Text style={styles.arrow}>›</Text>
+  </TouchableOpacity>
+);
+
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 40 },
+  safeArea: { flex: 1, backgroundColor: COLORS.bg },
+  scrollContent: { padding: 20, paddingBottom: 40 },
   profileSection: { alignItems: 'center', marginBottom: 25 },
-  avatarContainer: {
-    position: 'relative', marginBottom: 15,
-    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2, shadowRadius: 10, elevation: 5,
+  avatarWrapper: {
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5,
   },
-  avatar: { width: 110, height: 110, borderRadius: 55, borderWidth: 4, borderColor: '#fff' },
-  editBadge: {
-    position: 'absolute', bottom: 0, right: 5, backgroundColor: COLORS.primary,
-    padding: 8, borderRadius: 20, borderWidth: 3, borderColor: '#fff',
-    justifyContent: 'center', alignItems: 'center'
+  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: '#FFF' },
+  adminBadge: { 
+    position: 'absolute', bottom: 0, right: 0, backgroundColor: COLORS.admin, 
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, borderWidth: 2, borderColor: '#FFF' 
   },
-  name: { fontSize: 24, fontWeight: '800', color: COLORS.textMain, marginBottom: 2 },
-  email: { fontSize: 14, color: COLORS.textSub, marginBottom: 20 },
-  statsContainer: {
-    flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16,
-    paddingVertical: 15, paddingHorizontal: 20, width: '100%',
-    justifyContent: 'space-around', alignItems: 'center',
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  adminBadgeText: { fontSize: 8, color: '#FFF', fontWeight: 'bold' },
+  userName: { fontSize: 22, fontWeight: '800', color: COLORS.textMain, marginTop: 15 },
+  userEmail: { fontSize: 13, color: COLORS.textSub, marginBottom: 20 },
+  statsCard: { 
+    flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, padding: 15, width: '100%',
+    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 2
   },
-  dividerVertical: { width: 1, height: 40, backgroundColor: '#F0F0F0' },
-  bannerBtn: {
-    flexDirection: 'row', backgroundColor: COLORS.textMain, borderRadius: 20,
-    padding: 20, alignItems: 'center', marginBottom: 20,
-    shadowColor: COLORS.textMain, shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2, shadowRadius: 10, elevation: 4,
+  statItem: { flex: 1, alignItems: 'center' },
+  statNumber: { fontSize: 18, fontWeight: 'bold', color: COLORS.textMain },
+  statLabel: { fontSize: 11, color: COLORS.textSub, marginTop: 2 },
+  vDivider: { width: 1, height: '100%', backgroundColor: '#F0F0F0' },
+  banner: { 
+    flexDirection: 'row', backgroundColor: COLORS.textMain, borderRadius: 18, padding: 18, alignItems: 'center', marginBottom: 20 
   },
-  bannerTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  bannerSub: { color: '#ccc', fontSize: 12 },
-  bannerIconBox: {
-    backgroundColor: 'rgba(255,255,255,0.2)', width: 44, height: 44,
-    borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginLeft: 15,
-  },
-  card: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 20,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03, shadowRadius: 5, elevation: 2,
-  },
-  menuItem: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 15,
-    borderBottomWidth: 1, borderBottomColor: '#F5F6FA',
-  },
-  menuIcon: {
-    width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 15,
-  },
-  menuText: { flex: 1, fontSize: 15, fontWeight: '500', color: COLORS.textMain },
-  arrow: { fontSize: 20, color: '#ccc' },
-  versionText: { textAlign: 'center', color: '#ccc', fontSize: 12, marginTop: 10 },
+  bannerTitle: { color: '#FFF', fontSize: 15, fontWeight: 'bold' },
+  bannerSub: { color: '#AAA', fontSize: 11, marginTop: 2 },
+  bannerEmoji: { fontSize: 22, marginLeft: 10 },
+  menuCard: { backgroundColor: '#FFF', borderRadius: 20, paddingHorizontal: 15, elevation: 1 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F8F9FD' },
+  menuIconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  menuIconImage: { width: 18, height: 18 },
+  menuText: { flex: 1, fontSize: 14, fontWeight: '500' },
+  arrow: { fontSize: 18, color: '#CCC' },
+  version: { textAlign: 'center', color: '#DDD', fontSize: 11, marginTop: 15 }
 });

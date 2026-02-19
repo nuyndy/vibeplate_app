@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState, useEffect, useCallback } from 'react';
+import React, { useLayoutEffect, useState, useEffect, useCallback, memo } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, 
   TextInput, ScrollView, Alert, ActivityIndicator, RefreshControl 
@@ -23,76 +23,84 @@ const COLORS = {
   border: '#F0F0F0',
 };
 
+// Component Input tách rời để tối ưu render
+const InputField = memo(({ label, value, onChange, icon, editable = true }) => (
+  <View style={styles.inputContainer}>
+    <Text style={styles.label}>{label}</Text>
+    <View style={[styles.inputWrapper, !editable && styles.disabledInput]}>
+      <Image source={{uri: icon}} style={[styles.inputIcon, !editable && {opacity: 0.5}]} />
+      <TextInput 
+        style={[styles.input, !editable && {color: '#888'}]} 
+        value={value} 
+        onChangeText={onChange} 
+        placeholderTextColor="#ccc"
+        editable={editable}
+      />
+    </View>
+  </View>
+));
+
 export default function InfoAccount({ navigation }) {
   const user = auth.currentUser;
 
-  // --- STATES ---
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [location, setLocation] = useState('');
-  const [avatar, setAvatar] = useState(null); 
+  // --- STATE TẬP TRUNG ---
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    location: '',
+    avatar: 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png'
+  });
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false); // State cho reload
+  const [refreshing, setRefreshing] = useState(false);
 
-  // --- HÀM LẤY DỮ LIỆU (Tách riêng để dùng chung cho useEffect và onRefresh) ---
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     if (!user) return;
     try {
-      // 1. Set dữ liệu từ Auth trước
-      setName(user.displayName || '');
-      setEmail(user.email || '');
-      let currentAvatar = user.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png';
-      setAvatar(currentAvatar);
-
-      // 2. Lấy dữ liệu chi tiết từ Firestore
       const docRef = doc(db, "users", user.email.toLowerCase());
       const docSnap = await getDoc(docRef);
       
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.location) setLocation(data.location);
-        if (data.photo_url) setAvatar(data.photo_url);
-        if (data.displayName) setName(data.displayName);
-      }
+      const firestoreData = docSnap.exists() ? docSnap.data() : {};
+      
+      setFormData({
+        name: firestoreData.displayName || user.displayName || '',
+        email: user.email || '',
+        location: firestoreData.location || '',
+        avatar: firestoreData.photo_url || user.photoURL || 'https://cdn-icons-png.flaticon.com/512/4333/4333609.png'
+      });
     } catch (error) {
-      console.log("Lỗi tải dữ liệu user:", error);
+      console.error("Lỗi tải dữ liệu user:", error);
     }
-  };
-
-  useEffect(() => {
-    fetchUserData();
   }, [user]);
 
-  // --- XỬ LÝ RELOAD ---
-  const onRefresh = useCallback(async () => {
+  useEffect(() => { fetchUserData(); }, [fetchUserData]);
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    // Reload lại Firebase Auth Profile để đảm bảo dữ liệu mới nhất
-    await user.reload(); 
+    await user?.reload();
     await fetchUserData();
     setRefreshing(false);
-  }, []);
+  };
 
-  // --- CONFIG HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTransparent: true,
       headerTitle: "Thông tin cá nhân",
-      headerTintColor: COLORS.textMain,
+      headerTitleStyle: { fontWeight: 'bold' },
       headerLeft: () => (
          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-           <Image 
-             source={{uri: 'https://cdn-icons-png.flaticon.com/512/271/271220.png'}} 
-             style={{width: 20, height: 20, tintColor: COLORS.textMain}} 
-           />
+            <Image 
+              source={{uri: 'https://cdn-icons-png.flaticon.com/512/271/271220.png'}} 
+              style={{width: 18, height: 18, tintColor: COLORS.textMain}} 
+            />
          </TouchableOpacity>
       ),
     });
   }, [navigation]);
 
   const pickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permissionResult.granted === false) {
-      Alert.alert("Cần quyền", "Cần cấp quyền truy cập thư viện ảnh.");
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert("Cần quyền", "Ứng dụng cần truy cập ảnh để đổi avatar.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -102,142 +110,94 @@ export default function InfoAccount({ navigation }) {
       quality: 0.5,
     });
     if (!result.canceled) {
-      setAvatar(result.assets[0].uri);
+      setFormData(prev => ({ ...prev, avatar: result.assets[0].uri }));
     }
   };
 
   const uploadToCloudinary = async (imageUri) => {
     const data = new FormData();
     const filename = imageUri.split('/').pop();
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : `image`;
-
+    const type = `image/${filename.split('.').pop()}`;
     data.append('file', { uri: imageUri, name: filename, type });
     data.append('upload_preset', UPLOAD_PRESET);
-    data.append('cloud_name', CLOUD_NAME);
 
-    try {
-      const res = await fetch(CLOUDINARY_URL, {
-        method: 'POST',
-        body: data,
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      const result = await res.json();
-      return result.secure_url;
-    } catch (error) {
-      console.log("Upload Error:", error);
-      throw error;
-    }
+    const res = await fetch(CLOUDINARY_URL, { method: 'POST', body: data });
+    const result = await res.json();
+    return result.secure_url;
   };
 
   const handleSave = async () => {
-    if (!user) return;
     setLoading(true);
-
     try {
-      let finalPhotoUrl = avatar; 
+      let finalPhotoUrl = formData.avatar;
 
-      if (avatar && avatar.startsWith('file://')) {
-          finalPhotoUrl = await uploadToCloudinary(avatar);
+      // Chỉ upload nếu là file local
+      if (formData.avatar.startsWith('file://')) {
+        finalPhotoUrl = await uploadToCloudinary(formData.avatar);
       }
 
-      await updateProfile(user, {
-        displayName: name,
-        photoURL: finalPhotoUrl 
-      });
-
-      const userRef = doc(db, "users", user.email.toLowerCase());
-      await updateDoc(userRef, {
-        displayName: name,
-        photo_url: finalPhotoUrl,
-        location: location
-      });
-
-      setAvatar(finalPhotoUrl);
-      Alert.alert("Thành công", "Thông tin đã được cập nhật!", [
-        { text: "OK", onPress: () => navigation.goBack() }
+      // Cập nhật song song Auth và Firestore
+      await Promise.all([
+        updateProfile(user, { displayName: formData.name, photoURL: finalPhotoUrl }),
+        updateDoc(doc(db, "users", user.email.toLowerCase()), {
+          displayName: formData.name,
+          photo_url: finalPhotoUrl,
+          location: formData.location
+        })
       ]);
+
+      Alert.alert("Thành công", "Thông tin đã được cập nhật!");
+      navigation.goBack();
     } catch (error) {
-      Alert.alert("Lỗi", "Không thể cập nhật: " + error.message);
+      Alert.alert("Lỗi", error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const InputField = ({ label, value, onChange, icon, editable = true }) => (
-    <View style={styles.inputContainer}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputWrapper, !editable && {backgroundColor: '#EFEFEF'}]}>
-        <Image source={{uri: icon}} style={[styles.inputIcon, !editable && {opacity: 0.5}]} />
-        <TextInput 
-          style={[styles.input, !editable && {color: '#888'}]} 
-          value={value} 
-          onChangeText={onChange} 
-          placeholderTextColor="#ccc"
-          editable={editable}
-        />
-      </View>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            tintColor={COLORS.primary}
-            colors={[COLORS.primary]}
-          />
-        }
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        
-        {/* AVATAR */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
-             <Image source={{ uri: avatar }} style={styles.avatar} />
-             <TouchableOpacity style={styles.cameraIcon} onPress={pickImage}>
-               <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/685/685655.png'}} style={{width: 16, height: 16, tintColor: '#fff'}} />
+             <Image source={{ uri: formData.avatar }} style={styles.avatar} />
+             <TouchableOpacity style={styles.cameraIcon} onPress={pickImage} activeOpacity={0.8}>
+               <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/685/685655.png'}} style={styles.camImg} />
              </TouchableOpacity>
           </View>
         </View>
 
-        {/* FORM */}
         <View style={styles.formSection}>
           <InputField 
             label="Họ và tên" 
-            value={name} onChange={setName}
+            value={formData.name} 
+            onChange={t => setFormData({...formData, name: t})}
             icon="https://cdn-icons-png.flaticon.com/512/1077/1077114.png"
           />
           <InputField 
             label="Email" 
-            value={email} onChange={setEmail}
+            value={formData.email} 
             icon="https://cdn-icons-png.flaticon.com/512/542/542638.png"
             editable={false} 
           />
           <InputField 
             label="Địa chỉ" 
-            value={location} onChange={setLocation}
+            value={formData.location} 
+            onChange={t => setFormData({...formData, location: t})}
             icon="https://cdn-icons-png.flaticon.com/512/535/535239.png"
           />
         </View>
 
-        {/* BUTTON */}
         <TouchableOpacity 
-            style={[styles.saveBtn, loading && {opacity: 0.7}]} 
-            onPress={handleSave}
-            disabled={loading}
+          style={[styles.saveBtn, loading && styles.disabledBtn]} 
+          onPress={handleSave}
+          disabled={loading}
         >
-          {loading ? (
-             <ActivityIndicator size="small" color="#fff" />
-          ) : (
-             <Text style={styles.saveBtnText}>Lưu thay đổi</Text>
-          )}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Lưu thay đổi</Text>}
         </TouchableOpacity>
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -245,18 +205,21 @@ export default function InfoAccount({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scrollContent: { padding: 20, paddingTop: 100 },
-  backBtn: { padding: 8, backgroundColor: '#fff', borderRadius: 12, marginLeft: 20, marginTop: 10, elevation: 2 },
-  avatarSection: { alignItems: 'center', marginBottom: 30 },
-  avatarContainer: { position: 'relative' },
-  avatar: { width: 110, height: 110, borderRadius: 55, borderWidth: 4, borderColor: '#fff' },
-  cameraIcon: { position: 'absolute', bottom: 0, right: 0, backgroundColor: COLORS.primary, padding: 10, borderRadius: 20, borderWidth: 3, borderColor: '#fff' },
-  formSection: { backgroundColor: COLORS.card, borderRadius: 20, padding: 20, marginBottom: 30, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  scrollContent: { padding: 24, paddingTop: 110 },
+  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, shadowOffset: {width:0, height:2} },
+  avatarSection: { alignItems: 'center', marginBottom: 35 },
+  avatarContainer: { position: 'relative', elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
+  avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, borderColor: '#fff' },
+  cameraIcon: { position: 'absolute', bottom: 5, right: 5, backgroundColor: COLORS.primary, width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
+  camImg: { width: 14, height: 14, tintColor: '#fff' },
+  formSection: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, marginBottom: 30, elevation: 2 },
   inputContainer: { marginBottom: 20 },
-  label: { fontSize: 14, color: COLORS.textSub, marginBottom: 8, fontWeight: '600' },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F6FA', borderRadius: 12, paddingHorizontal: 15, height: 52 },
-  inputIcon: { width: 20, height: 20, tintColor: COLORS.textSub, marginRight: 12 },
+  label: { fontSize: 13, color: COLORS.textSub, marginBottom: 8, fontWeight: '700', textTransform: 'uppercase', marginLeft: 4 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FB', borderRadius: 16, paddingHorizontal: 16, height: 56 },
+  disabledInput: { backgroundColor: '#F0F0F0', opacity: 0.7 },
+  inputIcon: { width: 18, height: 18, tintColor: COLORS.textSub, marginRight: 12 },
   input: { flex: 1, color: COLORS.textMain, fontWeight: '600', fontSize: 15 },
-  saveBtn: { backgroundColor: COLORS.primary, borderRadius: 16, height: 56, justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  saveBtn: { backgroundColor: COLORS.primary, borderRadius: 18, height: 58, justifyContent: 'center', alignItems: 'center', elevation: 4 },
+  disabledBtn: { opacity: 0.6 },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 });
