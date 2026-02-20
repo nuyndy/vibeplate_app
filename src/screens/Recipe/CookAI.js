@@ -14,14 +14,11 @@ import { sendMessageToGemini } from '../Services/AIService';
 
 export default function CookAI({ route, navigation }) {
   const { steps = [], title = "Món ăn", ingredients = [] } = route.params || {};
-
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStepState] = useState(1);
   const [isListening, setIsListening] = useState(false);
   const [isAiAnswering, setIsAiAnswering] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false); 
-  const [chatHistory, setChatHistory] = useState([
-    { role: 'assistant', content: `Bắt đầu nấu món ${title}. Bước 1: ${steps[0]}` }
-  ]);
+  const [chatHistory, setChatHistory] = useState([]);
 
   const chatScrollRef = useRef(null);
   const isLastStep = currentStep === steps.length;
@@ -109,32 +106,65 @@ export default function CookAI({ route, navigation }) {
   useEffect(() => {
     navigation.setOptions({ headerShown: true, title: title.toUpperCase() });
     Tts.setDefaultLanguage('vi-VN');
+    Voice.onSpeechStart = () => setIsListening(true);
+    Voice.onSpeechEnd = () => setIsListening(false);
+    Voice.onSpeechError = () => setIsListening(false);
     Voice.onSpeechResults = (e) => { if (e.value && e.value.length > 0) handleLogic(e.value[0].toLowerCase()); };
     return () => { Voice.destroy().then(Voice.removeAllListeners); Tts.stop(); };
   }, [navigation, title]);
+  useEffect(() => {
+  if (steps.length > 0) {
+    const firstMessage = `Bắt đầu nấu món ${title}. Bước 1: ${steps[0]}`;
+    
+    setChatHistory(prev => [
+      ...prev,
+      { role: 'assistant', content: firstMessage }
+    ]);
 
+    Tts.stop();
+    Tts.speak(firstMessage);
+  }
+  }, []);
   const handleLogic = async (text) => {
     const newUserMsg = { role: 'user', content: text };
     setChatHistory(prev => [...prev, newUserMsg]);
     
     if (text.match(/(tiếp theo|xong rồi|ok rồi|qua bước|tiếp)/)) {
-      if (currentStep < steps.length) {
-        const next = currentStep + 1;
-        setCurrentStep(next);
-        speakAndAddChat(`Bước ${next}: ${steps[next - 1]}`);
-      } else if (isLastStep) { 
-        handleFinishCooking(); 
-      }
-    } else if (text.match(/(quay lại|lùi|bước trước)/)) {
-      if (currentStep > 1) {
-        const prev = currentStep - 1;
-        setCurrentStep(prev);
-        speakAndAddChat(`Quay lại bước ${prev}: ${steps[prev - 1]}`);
-      }
+  setCurrentStep(prev => {
+    const next = prev + 1;
+
+    if (next <= steps.length) {
+      speakAndAddChat(`Bước ${next}: ${steps[next - 1]}`);
+      return next;
     } else {
+      handleFinishCooking();
+      return prev;
+    }
+  });
+} else if (text.match(/(quay lại|lùi|bước trước)/)) {
+  setCurrentStep(prev => {
+    const back = prev - 1;
+    if (back >= 1) {
+      speakAndAddChat(`Quay lại bước ${back}: ${steps[back - 1]}`);
+      return back;
+    }
+    return prev;
+  });
+} else {
       setIsAiAnswering(true);
       try {
-        const aiReply = await sendMessageToGemini(text, chatHistory.map(m => ({ sender: m.role === 'user' ? 'user' : 'assistant', text: m.content })));
+        const aiReply = await sendMessageToGemini(
+        text,
+        chatHistory.map(m => ({
+          sender: m.role === 'user' ? 'user' : 'assistant',
+          text: m.content
+        })),
+        {
+          title,
+          currentStep,
+          stepContent: steps[currentStep - 1]
+        }
+      );
         speakAndAddChat(aiReply);
       } catch (e) { 
         speakAndAddChat("Lag tí, nói lại nhé!"); 
