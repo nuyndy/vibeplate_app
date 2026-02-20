@@ -2,25 +2,9 @@ import { db, auth } from '../../firebase/firebaseConfig';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const OPENROUTER_API_KEY = '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'; 
-const API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL_NAME = "arcee-ai/trinity-large-preview:free"; 
-
-// --- HÀM TRỢ GIÚP: LÀM SẠCH VÀ PARSE JSON AN TOÀN ---
-const safeParseJSON = (str) => {
-  try {
-    // Tìm vị trí của dấu { đầu tiên và dấu } cuối cùng để tách JSON
-    const start = str.indexOf('{');
-    const end = str.lastIndexOf('}');
-    if (start === -1 || end === -1) return null;
-    
-    const jsonStr = str.substring(start, end + 1);
-    return JSON.parse(jsonStr);
-  } catch (e) {
-    console.error("Lỗi Parse JSON thủ công:", e);
-    return null;
-  }
-};
+const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const MODEL_NAME = process.env.EXPO_PUBLIC_MODEL_NAME;
 
 export const getUserFridge = async () => {
   try {
@@ -42,130 +26,123 @@ export const getUserPreferences = async () => {
   } catch (e) { return null; }
 };
 
-// --- 3. LẤY MÓN YÊU THÍCH ---
-export const getUserFavorites = async () => {
-  try {
-    const user = auth.currentUser;
-    if (!user || !user.email) return [];
-    const q = query(collection(db, "favorites"), where("email", "==", user.email));
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => doc.data().title);
-  } catch (e) { return []; }
-};
-
-// --- 4. LẤY TÂM TRẠNG ---
-export const getUserMood = async () => {
-  try {
-    const mood = await AsyncStorage.getItem('user_current_mood');
-    const map = { happy: "Vui vẻ", sad: "Buồn chán", tired: "Mệt mỏi", hungry: "Đói meo", neutral: "Bình thường" };
-    return map[mood] || "Bình thường";
-  } catch (e) { return "Bình thường"; }
-};
-
-// --- 5. LẤY DANH SÁCH MÓN ĂN TỪ DATABASE ---
 export const getAppRecipes = async () => {
   try {
     const snap = await getDocs(collection(db, "recipes"));
-    return snap.docs.map(doc => {
-      const data = doc.data();
-      return {
-        recipeId: doc.id, // Dùng doc.id thay vì data.recipeId để chính xác hơn
-        title: data.title,
-        photo_url: data.photo_url || "",
-        time: data.time || 30,
-        servings: data.servings || 2
-      };
-    });
+    return snap.docs.map(doc => ({
+      recipeId: doc.data().recipeId || doc.id,
+      title: doc.data().title,
+      photo_url: doc.data().photo_url || "",
+      steps: doc.data().description ? doc.data().description.split('\n') : [] // Tách sẵn steps
+    }));
   } catch (e) { return []; }
 };
 
-// --- 6. HÀM TẠO CÔNG THỨC THÔNG MINH ---
 export const generateRecipeJSON = async (userRequest) => {
   try {
     const [fridge, prefs, appRecipes] = await Promise.all([
       getUserFridge(), getUserPreferences(), getAppRecipes()
     ]);
 
-    const strFridge = fridge.length > 0 ? fridge.join(", ") : "Trống";
-    const strAllergies = prefs?.allergies?.join(", ") || "Không có";
-    const strAppRecipes = JSON.stringify(appRecipes);
-
-    // Cải tiến System Instruction để AI trả về JSON chuẩn hơn
-    const systemInstruction = `Bạn là đầu bếp AI VibePlate. CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.
-    DỊ ỨNG ƯU TIÊN 1: [${strAllergies}].
-    TỦ LẠNH: [${strFridge}].
-    DATABASE: ${strAppRecipes}.
-
-    QUY TRÌNH:
-    1. Nếu dính dị ứng, đổi món an toàn.
-    2. Tìm trong DATABASE nếu có món gần giống "${userRequest}", dùng \`recipeId\`, \`photo_url\`, \`time\`. 
-       Ghi chú thay thế nguyên liệu vào \`description\`.
-    3. Nếu không có trong DATABASE, gán \`recipeId\`: "none", \`photo_url\`: "".
-
-    FORMAT JSON MẪU (KHÔNG DÙNG DẤU SAO **):
-    {
-      "recipeId": "ID",
-      "warningMessage": "Thông báo",
-      "title": "Tên món",
-      "time": 30,
-      "servings": 2,
-      "ingredients": [{"name": "A", "amount": "1kg"}],
-      "description": "B1... B2..."
-    }`;
+    const systemInstruction = `Bạn là đầu bếp AI. Trả về JSON cho món: ${userRequest}. 
+    Description phải là các bước nấu ăn nối nhau bằng dấu xuống dòng \\n. 
+    KHÔNG dùng dấu **, KHÔNG để dòng trống.`;
 
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: MODEL_NAME,
-        messages: [{ role: "user", content: systemInstruction + `\n\nYêu cầu người dùng: ${userRequest}` }],
-        temperature: 0.1, // Thấp hơn để ổn định cấu trúc JSON
-        max_tokens: 1000
+        messages: [{ role: "user", content: systemInstruction }],
+        temperature: 0.3
       })
     });
 
     const data = await response.json();
-    if (!data.choices || data.choices.length === 0) return null;
-
     let resContent = data.choices[0].message.content;
-    
-    // Dùng hàm an toàn để parse
-    const parsed = safeParseJSON(resContent);
-    if (!parsed) return null;
+    const parsed = JSON.parse(resContent.substring(resContent.indexOf('{'), resContent.lastIndexOf('}') + 1));
 
-    // Hậu xử lý dữ liệu
-    const finalPhotoUrl = (parsed.recipeId !== "none" && parsed.photo_url) ? parsed.photo_url : null;
+    // --- LỌC BƯỚC TRỐNG VÀ KÝ TỰ \N THỪA ---
+    const cleanDescription = (parsed.description || "")
+      .split('\n')
+      .map(line => line.replace(/\\n/g, '').trim()) // Xóa chữ \n và khoảng trắng
+      .filter(line => line.length > 2) // Chỉ lấy dòng có nghĩa (trên 2 ký tự)
+      .join('\n');
 
     return {
       ...parsed,
-      photo_url: finalPhotoUrl,
-      warningMessage: (parsed.warningMessage || "").replace(/\*/g, ""),
-      description: (parsed.description || "").replace(/\*/g, ""),
+      description: cleanDescription,
       recipeId: parsed.recipeId === "none" ? "ai_gen_" + Date.now() : parsed.recipeId
     };
-
-  } catch (error) {
-    console.error("Lỗi AI Service:", error);
-    return null;
-  }
+  } catch (error) { return null; }
 };
 
-export const sendMessageToGemini = async (text, history) => {
+export const sendMessageToGemini = async (
+  text,
+  history,
+  context = {}
+) => {
   try {
-    const response = await fetch(API_URL, {
+    const {
+      title = "Món ăn",
+      currentStep = 1,
+      stepContent = ""
+    } = context;
+
+    const response = await fetch(process.env.EXPO_PUBLIC_API_URL, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${process.env.EXPO_PUBLIC_OPENROUTER_KEY}`,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
-        model: MODEL_NAME,
+        model: process.env.EXPO_PUBLIC_MODEL_NAME,
+        temperature: 0.4,
+        max_tokens: 150,
         messages: [
-          { role: "system", content: "Bạn là trợ lý VibePlate, thân thiện, không dùng dấu **." },
-          ...history.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text })),
+          {
+            role: "system",
+            content: `Bạn là một đầu bếp ảo đang nấu ăn cùng người dùng.
+
+          Món ăn: ${title}
+          Bước hiện tại (Bước ${currentStep}): ${stepContent}
+
+          QUY TẮC:
+          - Chỉ trả lời dựa trên món ăn và bước hiện tại.
+          - Ngắn gọn 1-3 câu.
+          - Tự nhiên như đang đứng cạnh trong bếp.
+          - Thuần tiếng Việt.
+          - Không markdown.
+          - Không ký tự đặc biệt.
+          - Không xuống dòng.
+          - Nếu hỏi ngoài nấu ăn, trả lời:
+          "Tôi đang tập trung hướng dẫn nấu món này, bạn cần giúp gì trong bếp không?"`
+          },
+          ...history.map(m => ({
+            role: m.sender === "user" ? "user" : "assistant",
+            content: m.text
+          })),
           { role: "user", content: text }
-        ],
-        temperature: 0.7
+        ]
       })
     });
+
     const data = await response.json();
-    return data.choices[0].message.content.replace(/\*/g, "");
-  } catch (e) { return "Hệ thống bận, thử lại sau nhé!"; }
+    let raw = data?.choices?.[0]?.message?.content || "";
+
+    let clean = raw
+      .replace(/^(Đầu bếp|Chef|AI|Bot|Trợ lý)(\s*):/gi, "")
+      .replace(/[*#_~`\[\]"']/g, "")
+      .replace(/\n+/g, ". ")
+      .replace(/\.\s*\./g, ".")
+      .trim();
+
+    if (clean.length < 5) {
+      clean = "Mạng hơi chậm, bạn hỏi lại giúp mình nhé.";
+    }
+
+    return clean;
+  } catch (e) {
+    return "Xin lỗi, mình chưa nghe rõ.";
+  }
 };

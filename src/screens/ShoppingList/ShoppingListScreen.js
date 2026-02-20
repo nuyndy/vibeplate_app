@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { 
   collection, query, where, onSnapshot, addDoc, doc, 
-  getDocs, deleteDoc, updateDoc, writeBatch, serverTimestamp 
+  getDocs, deleteDoc, updateDoc, writeBatch, serverTimestamp, Timestamp
 } from 'firebase/firestore';
 import { db, auth } from '../../firebase/firebaseConfig'; 
 import {
@@ -114,10 +114,20 @@ export default function ShoppingListScreen({ navigation }) {
 
   const handleToggle = useCallback(async (item) => {
   const newStatus = item.status === 'pending' ? 'completed' : 'pending';
+    // Kiểm tra user để tránh crash nếu session hết hạn
+  const user = auth.currentUser;
+  if (!user) {
+    Alert.alert("Lỗi", "Bạn cần đăng nhập lại");
+    return;
+  }
   try {
     const batch = writeBatch(db);
     const itemRef = doc(db, 'shoppingList', item.itemId);
-    batch.update(itemRef, { status: newStatus, updatedAt: serverTimestamp() });
+    // 1. Cập nhật trạng thái trong giỏ hàng
+    batch.update(itemRef, { 
+      status: newStatus, 
+      updatedAt: serverTimestamp() 
+    });
 
     if (newStatus === 'completed') {
       // --- TÍNH TOÁN HẠN SỬ DỤNG (HSD) ---
