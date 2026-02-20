@@ -19,7 +19,7 @@ import SuggestionModal from "./SuggestionModal";
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = (width - 40) / 2; 
 
-const WEATHER_API_KEY = '30c5dcb9ceb5311e00ff1de538706272';
+const WEATHER_API_KEY = process.env.EXPO_PUBLIC_WEATHER_API_KEY;
 let hasShownPantryAlertGlobal = false;
 
 export default function HomeScreen({ navigation }) {

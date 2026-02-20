@@ -16,7 +16,7 @@
     "@react-native-google-signin/google-signin": "^16.1.1",
     "@react-native-voice/voice": "^3.2.4",
     "@react-navigation/drawer": "7.0.0",
-    "@react-navigation/native": "7.0.0",
+    "@react-navigation/native": "^7.1.28",
     "@react-navigation/stack": "^7.7.2",
     "date-fns": "^4.1.0",
     "expo": "^52.0.48",

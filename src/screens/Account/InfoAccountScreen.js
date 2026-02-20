@@ -10,7 +10,7 @@ import { auth, db } from '../../firebase/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 
-const CLOUD_NAME = "devpumtqu";
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
 const UPLOAD_PRESET = "VibePlate";
 const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
