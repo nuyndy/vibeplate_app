@@ -66,9 +66,14 @@ export default function ChatScreen({ navigation }) {
     if (userText.length === 0) return;
 
     const userMsg = { id: Date.now().toString(), type: 'text', text: userText, sender: 'user' };
-    setMessages(prev => [...prev, userMsg]);
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
     setInputText('');
     setIsTyping(true);
+
+    const aiHistory = nextMessages
+      .filter(m => m.type === 'text')
+      .map(m => ({ sender: m.sender === 'user' ? 'user' : 'assistant', text: m.text }));
 
     try {
       const lowerText = userText.toLowerCase();
@@ -90,13 +95,13 @@ export default function ChatScreen({ navigation }) {
             const cardMsg = { id: (Date.now() + 1).toString(), type: 'recipe_card', recipeData: recipeJson, sender: 'ai' };
             setMessages(prev => [...prev, textIntroMsg, cardMsg]);
          } else {
-            const textReply = await sendMessageToGemini(userText, messages);
-            setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: `${textReply} ✨`, sender: 'ai' }]);
+            const textReply = await sendMessageToGemini(userText, aiHistory);
+            setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: textReply, sender: 'ai' }]);
          }
       } else {
-          const textReply = await sendMessageToGemini(userText, messages);
+          const textReply = await sendMessageToGemini(userText, aiHistory);
           // Thêm sticker nhẹ vào cuối câu trả lời bình thường của AI
-          setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: `${textReply} ✨`, sender: 'ai' }]);
+          setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: textReply, sender: 'ai' }]);
       }
     } catch (error) {
         setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: 'Lỗi rồi, thử lại nhé! 😅', sender: 'ai' }]);

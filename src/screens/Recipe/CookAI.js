@@ -227,7 +227,7 @@ export default function CookAI({ route, navigation }) {
           stepContent: normalizedSteps[currentStep - 1] || ""
         }
       );
-        speakAndAddChat(aiReply);
+        speakAndAddChat(aiReply || 'Mình vẫn đang theo dõi món này, bạn nói lại ngắn gọn giúp mình nhé.');
       } catch (e) { 
         speakAndAddChat("Lag tí, nói lại nhé!"); 
       } finally { 
@@ -237,8 +237,13 @@ export default function CookAI({ route, navigation }) {
   };
 
   const speakAndAddChat = (text) => {
-    setChatHistory(prev => [...prev, { role: 'assistant', content: text }]);
-    Tts.stop(); Tts.speak(text);
+    const safeText = typeof text === 'string' && text.trim()
+      ? text.trim()
+      : 'Mình vẫn ở đây để hỗ trợ bạn từng bước nhé.';
+
+    setChatHistory(prev => [...prev, { role: 'assistant', content: safeText }]);
+    Tts.stop();
+    Tts.speak(safeText);
   };
 
   return (
