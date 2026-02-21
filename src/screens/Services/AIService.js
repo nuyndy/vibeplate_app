@@ -2,7 +2,8 @@ import { db, auth } from '../../firebase/firebaseConfig';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
+const OPENROUTER_API_KEY =
+  process.env.EXPO_PUBLIC_OPENROUTER_API_KEY_CHAT || process.env.EXPO_PUBLIC_OPENROUTER_KEY;
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const MODEL_NAME = process.env.EXPO_PUBLIC_MODEL_NAME;
 
