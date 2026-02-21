@@ -25,6 +25,8 @@ Các biến bắt buộc:
 - `EXPO_PUBLIC_CLOUD_NAME`
 - `EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET`
 
+> Gợi ý: nên để model `:free` (ví dụ `arcee-ai/trinity-large-preview:free`) để tránh phát sinh phí.
+
 > `.env` đã nằm trong `.gitignore`, không commit key thật lên repo.
 
 ### 3) Build
