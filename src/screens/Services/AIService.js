@@ -6,11 +6,13 @@ const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_KEY;
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const MODEL_NAME = process.env.EXPO_PUBLIC_MODEL_NAME;
 
+const hasValidAIConfig = () => Boolean(API_URL && OPENROUTER_API_KEY && MODEL_NAME);
+
 export const getUserFridge = async () => {
   try {
     const user = auth.currentUser;
     if (!user || !user.email) return [];
-    const q = query(collection(db, "inventory"), where("email", "==", user.email));
+    const q = query(collection(db, 'inventory'), where('email', '==', user.email));
     const snap = await getDocs(q);
     return snap.docs.map(doc => `${doc.data().name} (${doc.data().quantity} ${doc.data().unit})`);
   } catch (e) { return []; }
@@ -20,7 +22,7 @@ export const getUserPreferences = async () => {
   try {
     const user = auth.currentUser;
     if (!user || !user.email) return null;
-    const q = query(collection(db, "user_preferences"), where("email", "==", user.email));
+    const q = query(collection(db, 'user_preferences'), where('email', '==', user.email));
     const snap = await getDocs(q);
     return snap.empty ? null : snap.docs[0].data();
   } catch (e) { return null; }
@@ -28,18 +30,20 @@ export const getUserPreferences = async () => {
 
 export const getAppRecipes = async () => {
   try {
-    const snap = await getDocs(collection(db, "recipes"));
+    const snap = await getDocs(collection(db, 'recipes'));
     return snap.docs.map(doc => ({
       recipeId: doc.data().recipeId || doc.id,
       title: doc.data().title,
-      photo_url: doc.data().photo_url || "",
-      steps: doc.data().description ? doc.data().description.split('\n') : [] // Tách sẵn steps
+      photo_url: doc.data().photo_url || '',
+      steps: doc.data().description ? doc.data().description.split('\n') : []
     }));
   } catch (e) { return []; }
 };
 
 export const generateRecipeJSON = async (userRequest) => {
   try {
+    if (!hasValidAIConfig()) return null;
+
     const [fridge, prefs, appRecipes] = await Promise.all([
       getUserFridge(), getUserPreferences(), getAppRecipes()
     ]);
@@ -49,30 +53,33 @@ export const generateRecipeJSON = async (userRequest) => {
     KHÔNG dùng dấu **, KHÔNG để dòng trống.`;
 
     const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: MODEL_NAME,
-        messages: [{ role: "user", content: systemInstruction }],
+        messages: [{ role: 'user', content: systemInstruction }],
         temperature: 0.3
       })
     });
 
+    if (!response.ok) return null;
+
     const data = await response.json();
-    let resContent = data.choices[0].message.content;
+    const resContent = data?.choices?.[0]?.message?.content;
+    if (!resContent) return null;
+
     const parsed = JSON.parse(resContent.substring(resContent.indexOf('{'), resContent.lastIndexOf('}') + 1));
 
-    // --- LỌC BƯỚC TRỐNG VÀ KÝ TỰ \N THỪA ---
-    const cleanDescription = (parsed.description || "")
+    const cleanDescription = (parsed.description || '')
       .split('\n')
-      .map(line => line.replace(/\\n/g, '').trim()) // Xóa chữ \n và khoảng trắng
-      .filter(line => line.length > 2) // Chỉ lấy dòng có nghĩa (trên 2 ký tự)
+      .map(line => line.replace(/\\n/g, '').trim())
+      .filter(line => line.length > 2)
       .join('\n');
 
     return {
       ...parsed,
       description: cleanDescription,
-      recipeId: parsed.recipeId === "none" ? "ai_gen_" + Date.now() : parsed.recipeId
+      recipeId: parsed.recipeId === 'none' ? 'ai_gen_' + Date.now() : parsed.recipeId
     };
   } catch (error) { return null; }
 };
@@ -84,24 +91,28 @@ export const sendMessageToGemini = async (
 ) => {
   try {
     const {
-      title = "Món ăn",
+      title = 'Món ăn',
       currentStep = 1,
-      stepContent = ""
+      stepContent = ''
     } = context;
 
-    const response = await fetch(process.env.EXPO_PUBLIC_API_URL, {
-      method: "POST",
+    if (!hasValidAIConfig()) {
+      return 'AI chưa được cấu hình đầy đủ. Bạn kiểm tra lại biến môi trường giúp mình nhé.';
+    }
+
+    const response = await fetch(API_URL, {
+      method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.EXPO_PUBLIC_OPENROUTER_KEY}`,
-        "Content-Type": "application/json"
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: process.env.EXPO_PUBLIC_MODEL_NAME,
+        model: MODEL_NAME,
         temperature: 0.4,
         max_tokens: 150,
         messages: [
           {
-            role: "system",
+            role: 'system',
             content: `Bạn là một đầu bếp ảo đang nấu ăn cùng người dùng.
 
           Món ăn: ${title}
@@ -119,30 +130,34 @@ export const sendMessageToGemini = async (
           "Tôi đang tập trung hướng dẫn nấu món này, bạn cần giúp gì trong bếp không?"`
           },
           ...history.map(m => ({
-            role: m.sender === "user" ? "user" : "assistant",
+            role: m.sender === 'user' ? 'user' : 'assistant',
             content: m.text
           })),
-          { role: "user", content: text }
+          { role: 'user', content: text }
         ]
       })
     });
 
+    if (!response.ok) {
+      return 'Mình chưa kết nối được tới AI, bạn thử lại sau ít phút nhé.';
+    }
+
     const data = await response.json();
-    let raw = data?.choices?.[0]?.message?.content || "";
+    let raw = data?.choices?.[0]?.message?.content || '';
 
     let clean = raw
-      .replace(/^(Đầu bếp|Chef|AI|Bot|Trợ lý)(\s*):/gi, "")
-      .replace(/[*#_~`\[\]"']/g, "")
-      .replace(/\n+/g, ". ")
-      .replace(/\.\s*\./g, ".")
+      .replace(/^(Đầu bếp|Chef|AI|Bot|Trợ lý)(\s*):/gi, '')
+      .replace(/[*#_~`\[\]"']/g, '')
+      .replace(/\n+/g, '. ')
+      .replace(/\.\s*\./g, '.')
       .trim();
 
     if (clean.length < 5) {
-      clean = "Mạng hơi chậm, bạn hỏi lại giúp mình nhé.";
+      clean = 'Mạng hơi chậm, bạn hỏi lại giúp mình nhé.';
     }
 
     return clean;
   } catch (e) {
-    return "Xin lỗi, mình chưa nghe rõ.";
+    return 'Xin lỗi, mình chưa nghe rõ.';
   }
 };

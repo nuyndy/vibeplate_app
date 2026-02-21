@@ -14,8 +14,9 @@ import {
 import { styles } from './style';
 
 // --- CẤU HÌNH CLOUDINARY ---
-const CLOUD_NAME = 'devpumtqu';
-const UPLOAD_PRESET = 'VibePlate';
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
 // --- 1. COMPONENT ITEM ---
 const RecipeItem = memo(({ item, onEdit, onDelete }) => {
@@ -93,6 +94,8 @@ export default function AdminRecipesScreen({ navigation }) {
 
   // --- HÀM UPLOAD ---
   const uploadToCloudinary = async (imageFile) => {
+    if (!hasCloudinaryConfig()) return null;
+
     if (!imageFile || !imageFile.uri) return null;
     const data = new FormData();
     const uri = Platform.OS === 'android' ? imageFile.uri : imageFile.uri.replace('file://', '');

@@ -12,8 +12,9 @@ import {
 import { styles, COLORS } from './style';
 
 const COLLECTION_NAME = 'ingredients';
-const CLOUD_NAME = 'devpumtqu';
-const UPLOAD_PRESET = 'VibePlate';
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
 export default function AdminIngredientsScreen({ navigation }) {
   const [dataList, setDataList] = useState([]);
@@ -68,6 +69,7 @@ export default function AdminIngredientsScreen({ navigation }) {
   // --- HÀM UPLOAD ĐÃ FIX LỖI NETWORK ERROR ---
   const uploadToCloudinary = async (imageFile) => {
     if (!imageFile) return null;
+    if (!hasCloudinaryConfig()) return null;
 
     const data = new FormData();
     

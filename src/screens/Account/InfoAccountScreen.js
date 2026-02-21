@@ -11,8 +11,9 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 
 const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
-const UPLOAD_PRESET = "VibePlate";
-const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const CLOUDINARY_URL = CLOUD_NAME ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload` : '';
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
 const COLORS = {
   primary: '#000000',
@@ -115,6 +116,8 @@ export default function InfoAccount({ navigation }) {
   };
 
   const uploadToCloudinary = async (imageUri) => {
+    if (!hasCloudinaryConfig()) return null;
+
     const data = new FormData();
     const filename = imageUri.split('/').pop();
     const type = `image/${filename.split('.').pop()}`;

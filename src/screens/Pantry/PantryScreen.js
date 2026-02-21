@@ -24,9 +24,10 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const CLOUD_NAME = "devpumtqu";
-const UPLOAD_PRESET = "VibePlate";
-const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const CLOUDINARY_URL = CLOUD_NAME ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload` : '';
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
 export default function PantryScreen(props) {
   const { navigation } = props;
@@ -132,7 +133,10 @@ export default function PantryScreen(props) {
     try {
       let finalPhotoUrl = editingItem?.photo_url || 'https://via.placeholder.com/150';
       if (capturedPhoto && capturedPhoto !== editingItem?.photo_url) {
-         // Logic Upload Cloudinary (giữ nguyên của bạn)
+         if (!hasCloudinaryConfig()) {
+           Alert.alert('Thiếu cấu hình', 'Thiếu EXPO_PUBLIC_CLOUD_NAME hoặc EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET trong .env');
+           throw new Error('Cloudinary config missing');
+         }
          const data = new FormData();
          data.append('file', { uri: capturedPhoto, type: 'image/jpeg', name: 'upload.jpg' });
          data.append('upload_preset', UPLOAD_PRESET);

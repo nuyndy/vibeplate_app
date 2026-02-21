@@ -9,8 +9,9 @@ import { auth, db } from '../../firebase/firebaseConfig';
 import { collection, getDocs, query, where, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { styles as nominationStyles, COLORS } from '../DishNomination/style'; 
 
-const CLOUD_NAME = 'devpumtqu';
-const UPLOAD_PRESET = 'VibePlate';
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 const TRASH_ICON = require('../../../assets/icons/trashBin.png');
 const BACK_ICON = { uri: 'https://cdn-icons-png.flaticon.com/512/271/271220.png' };
 
@@ -118,6 +119,8 @@ export default function ContributedDishesScreen({ navigation }) {
   };
 
   const uploadToCloudinary = async (uri) => {
+    if (!hasCloudinaryConfig()) return null;
+
     const formData = new FormData();
     formData.append('file', { uri, type: 'image/jpeg', name: 'upload.jpg' });
     formData.append('upload_preset', UPLOAD_PRESET);

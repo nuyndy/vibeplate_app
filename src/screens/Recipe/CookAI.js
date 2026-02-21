@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, Image,
   StyleSheet, ActivityIndicator, SafeAreaView, StatusBar, Alert
@@ -14,16 +14,64 @@ import { sendMessageToGemini } from '../Services/AIService';
 
 export default function CookAI({ route, navigation }) {
   const { steps = [], title = "Món ăn", ingredients = [] } = route.params || {};
-  const [currentStep, setCurrentStepState] = useState(1);
+  const [currentStep, setCurrentStep] = useState(1);
   const [isListening, setIsListening] = useState(false);
   const [isAiAnswering, setIsAiAnswering] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false); 
   const [chatHistory, setChatHistory] = useState([]);
 
+  const normalizedSteps = useMemo(() => {
+    if (!Array.isArray(steps)) return [];
+
+    return steps
+      .flatMap(step => String(step ?? '').split(/(\\n|\r?\n)/g))
+      .map(step => step.trim())
+      .filter(step => step.length > 0);
+  }, [steps]);
+
+  const totalSteps = normalizedSteps.length;
+
   const chatScrollRef = useRef(null);
-  const isLastStep = currentStep === steps.length;
+  const isMountedRef = useRef(true);
+  const listenTimeoutRef = useRef(null);
+  const isLastStep = totalSteps > 0 && currentStep === totalSteps;
+
+  const safeStopListening = useCallback(async () => {
+    try {
+      await Voice.stop();
+    } catch (error) {
+      // ignore when voice not active
+    } finally {
+      if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
+      if (isMountedRef.current) setIsListening(false);
+    }
+  }, []);
+
+  const startListening = useCallback(async () => {
+    if (isListening || isAiAnswering || isFinishing) return;
+
+    try {
+      const available = await Voice.isAvailable();
+      if (!available) {
+        Alert.alert('Thông báo', 'Thiết bị không hỗ trợ Voice Control.');
+        return;
+      }
+
+      await Tts.stop();
+      await Voice.start('vi-VN');
+
+      if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
+      listenTimeoutRef.current = setTimeout(() => {
+        safeStopListening();
+      }, 15000);
+    } catch (error) {
+      setIsListening(false);
+      Alert.alert('Lỗi', 'Không thể bật micro, bạn thử lại nhé.');
+    }
+  }, [isListening, isAiAnswering, isFinishing, safeStopListening]);
 
   const handleFinishCooking = async () => {
+    await safeStopListening();
     setIsFinishing(true);
     const userEmail = auth.currentUser?.email;
 
@@ -106,15 +154,28 @@ export default function CookAI({ route, navigation }) {
   useEffect(() => {
     navigation.setOptions({ headerShown: true, title: title.toUpperCase() });
     Tts.setDefaultLanguage('vi-VN');
-    Voice.onSpeechStart = () => setIsListening(true);
-    Voice.onSpeechEnd = () => setIsListening(false);
-    Voice.onSpeechError = () => setIsListening(false);
-    Voice.onSpeechResults = (e) => { if (e.value && e.value.length > 0) handleLogic(e.value[0].toLowerCase()); };
-    return () => { Voice.destroy().then(Voice.removeAllListeners); Tts.stop(); };
+
+    isMountedRef.current = true;
+    Voice.onSpeechStart = () => isMountedRef.current && setIsListening(true);
+    Voice.onSpeechEnd = () => isMountedRef.current && setIsListening(false);
+    Voice.onSpeechError = () => isMountedRef.current && setIsListening(false);
+    Voice.onSpeechResults = (e) => {
+      const transcript = e?.value?.[0]?.trim().toLowerCase();
+      if (transcript) handleLogic(transcript);
+    };
+
+    return () => {
+      isMountedRef.current = false;
+      if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
+      Tts.stop();
+      Voice.destroy().catch(() => null).finally(() => {
+        Voice.removeAllListeners();
+      });
+    };
   }, [navigation, title]);
   useEffect(() => {
-  if (steps.length > 0) {
-    const firstMessage = `Bắt đầu nấu món ${title}. Bước 1: ${steps[0]}`;
+  if (totalSteps > 0) {
+    const firstMessage = `Bắt đầu nấu món ${title}. Bước 1: ${normalizedSteps[0]}`;
     
     setChatHistory(prev => [
       ...prev,
@@ -124,17 +185,18 @@ export default function CookAI({ route, navigation }) {
     Tts.stop();
     Tts.speak(firstMessage);
   }
-  }, []);
+  }, [normalizedSteps, title, totalSteps]);
   const handleLogic = async (text) => {
     const newUserMsg = { role: 'user', content: text };
-    setChatHistory(prev => [...prev, newUserMsg]);
-    
+    const nextHistory = [...chatHistory, newUserMsg];
+    setChatHistory(nextHistory);
+
     if (text.match(/(tiếp theo|xong rồi|ok rồi|qua bước|tiếp)/)) {
   setCurrentStep(prev => {
     const next = prev + 1;
 
-    if (next <= steps.length) {
-      speakAndAddChat(`Bước ${next}: ${steps[next - 1]}`);
+    if (next <= totalSteps) {
+      speakAndAddChat(`Bước ${next}: ${normalizedSteps[next - 1]}`);
       return next;
     } else {
       handleFinishCooking();
@@ -145,7 +207,7 @@ export default function CookAI({ route, navigation }) {
   setCurrentStep(prev => {
     const back = prev - 1;
     if (back >= 1) {
-      speakAndAddChat(`Quay lại bước ${back}: ${steps[back - 1]}`);
+      speakAndAddChat(`Quay lại bước ${back}: ${normalizedSteps[back - 1]}`);
       return back;
     }
     return prev;
@@ -155,14 +217,14 @@ export default function CookAI({ route, navigation }) {
       try {
         const aiReply = await sendMessageToGemini(
         text,
-        chatHistory.map(m => ({
+        nextHistory.map(m => ({
           sender: m.role === 'user' ? 'user' : 'assistant',
           text: m.content
         })),
         {
           title,
           currentStep,
-          stepContent: steps[currentStep - 1]
+          stepContent: normalizedSteps[currentStep - 1] || ""
         }
       );
         speakAndAddChat(aiReply);
@@ -185,16 +247,16 @@ export default function CookAI({ route, navigation }) {
       <View style={styles.fixedHeaderArea}>
         <View style={styles.progressSection}>
           <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${(currentStep / steps.length) * 100}%` }]} />
+            <View style={[styles.progressFill, { width: `${totalSteps ? (currentStep / totalSteps) * 100 : 0}%` }]} />
           </View>
           <View style={styles.progressTextRow}> 
             <Text style={styles.progressText}>TIẾN ĐỘ</Text>
-            <Text style={styles.stepCounter}>{currentStep} / {steps.length}</Text>
+            <Text style={styles.stepCounter}>{currentStep} / {totalSteps}</Text>
           </View>
         </View>
         <View style={styles.stepBox}>
           <View style={styles.stepBadge}><Text style={styles.stepBadgeText}>BƯỚC {currentStep}</Text></View>
-          <Text style={styles.stepContent}>{steps[currentStep - 1]}</Text>
+          <Text style={styles.stepContent}>{normalizedSteps[currentStep - 1] || "Đang chuẩn bị bước..."}</Text>
         </View>
       </View>
 
@@ -233,13 +295,8 @@ export default function CookAI({ route, navigation }) {
             <TouchableOpacity 
               activeOpacity={0.9} 
               style={styles.micMain} 
-              onPress={async () => { 
-                try { 
-                  setIsListening(true);
-                  await Tts.stop(); 
-                  await Voice.start('vi-VN'); 
-                } catch (e) { setIsListening(false); } 
-              }}
+              disabled={isListening || isAiAnswering || isFinishing}
+              onPress={startListening}
             >
               <View style={[styles.micInner, isListening && styles.micActive]}>
                 <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/709/709682.png' }} style={styles.micImg} />

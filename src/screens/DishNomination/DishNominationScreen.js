@@ -10,8 +10,9 @@ import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/fire
 import { styles, COLORS } from './style';
 
 // --- CẤU HÌNH CLOUDINARY ---
-const CLOUD_NAME = 'devpumtqu';
-const UPLOAD_PRESET = 'VibePlate'; 
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
 export default function DishNominationScreen({ navigation }) {
   
@@ -81,6 +82,8 @@ export default function DishNominationScreen({ navigation }) {
 
   // --- HÀM UPLOAD ẢNH (GIỮ NGUYÊN) ---
   const uploadToCloudinary = async (imageUri) => {
+    if (!hasCloudinaryConfig()) return null;
+
     const data = new FormData();
     const uri = Platform.OS === 'android' ? imageUri : imageUri.replace('file://', '');
     

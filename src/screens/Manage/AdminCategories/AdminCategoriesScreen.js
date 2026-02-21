@@ -13,8 +13,9 @@ import {
 import { styles, COLORS } from './style';
 
 const TABS = { CATEGORIES: 'categories' };
-const CLOUD_NAME = 'devpumtqu';
-const UPLOAD_PRESET = 'VibePlate';
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
 export default function AdminCategoriesScreen({ navigation }) {
   const [dataList, setDataList] = useState([]);
@@ -72,6 +73,7 @@ export default function AdminCategoriesScreen({ navigation }) {
   // --- 3. UPLOAD CLOUDINARY (FIX LỖI ANDROID) ---
   const uploadToCloudinary = async (imageUri) => {
     if (!imageUri) return null;
+    if (!hasCloudinaryConfig()) return null;
     const data = new FormData();
     // Fix URI cho Android/iOS
     const cleanUri = Platform.OS === 'ios' ? imageUri.replace('file://', '') : imageUri;

@@ -72,25 +72,29 @@ export default function ChatScreen({ navigation }) {
 
     try {
       const lowerText = userText.toLowerCase();
-      const isAskingForRecipe = lowerText.includes('công thức') || lowerText.includes('cách làm') || lowerText.includes('nấu') || userText.length <= 15; 
+      const recipeKeywords = ['công thức', 'cách làm', 'nấu', 'món', 'nguyên liệu'];
+      const isAskingForRecipe = recipeKeywords.some(keyword => lowerText.includes(keyword));
 
       if (isAskingForRecipe) {
          const recipeJson = await generateRecipeJSON(userText);
-         if (recipeJson) {
+         if (recipeJson?.title && recipeJson?.description) {
             // THÊM STICKER VÀO PHẦN TRẢ LỜI TỰ ĐỘNG
             const introMsg = `Tuyệt vời! 🌟 Mình đã tìm thấy công thức món ${recipeJson.title} và tối ưu kết hợp với đồ trong tủ lạnh cho bạn đây! 🥣🥗`;
-            
-            const textIntroMsg = { 
-                id: Date.now().toString(), 
-                type: 'text', 
-                text: recipeJson.warningMessage || introMsg, 
-                sender: 'ai' 
+
+            const textIntroMsg = {
+                id: Date.now().toString(),
+                type: 'text',
+                text: recipeJson.warningMessage || introMsg,
+                sender: 'ai'
             };
             const cardMsg = { id: (Date.now() + 1).toString(), type: 'recipe_card', recipeData: recipeJson, sender: 'ai' };
             setMessages(prev => [...prev, textIntroMsg, cardMsg]);
+         } else {
+            const textReply = await sendMessageToGemini(userText, messages);
+            setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: `${textReply} ✨`, sender: 'ai' }]);
          }
       } else {
-          const textReply = await sendMessageToGemini(userText, messages); 
+          const textReply = await sendMessageToGemini(userText, messages);
           // Thêm sticker nhẹ vào cuối câu trả lời bình thường của AI
           setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: `${textReply} ✨`, sender: 'ai' }]);
       }
