@@ -1,29 +1,33 @@
 import React, { useState, useLayoutEffect, useRef, useEffect } from 'react';
-import { 
+import {
   View, Text, TextInput, TouchableOpacity, FlatList, Image,
-  StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator,
-  Animated, Easing,ImageBackground,
+  StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView,
+  Animated, ImageBackground,
 } from 'react-native';
-import { Ionicons,MaterialCommunityIcons } from '@expo/vector-icons'; 
+import { Ionicons } from '@expo/vector-icons';
 import MenuImage from '../../components/MenuImage/MenuImage';
 
-// Gọi hàm từ file AI
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { generatePersonalizedRecipeJSON } from '../Services/AIService'; 
+import { generatePersonalizedRecipeJSON, getAppRecipes, getUserFridge } from '../Services/AIService';
 
-// BIẾN TOÀN CỤC LƯU LỊCH SỬ CHAT
 let sessionChatHistory = [
-  { id: '1', type: 'text', text: 'Chào bạn! 👋 Mình sẽ gợi ý món theo đúng format: tên món, thời gian nấu, số lượng ăn, nguyên liệu và các bước làm. ✨', sender: 'ai' }
+  { id: '1', type: 'text', text: 'Chào bạn! 👋 Mình sẽ trả 2 tin nhắn: (1) món đã tìm thấy + đồ trong tủ, (2) công thức đầy đủ + hình ảnh. ✨', sender: 'ai' }
 ];
+
+const normalizeText = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 const DetailedRecipeCard = ({ recipeData }) => {
   if (!recipeData) return null;
-  const hasPhoto = recipeData.photo_url && recipeData.photo_url.trim() !== "" && recipeData.photo_url !== 'none';
+  const fallbackPhoto = Array.isArray(recipeData.photosArray) && recipeData.photosArray.length > 0
+    ? recipeData.photosArray[0]
+    : '';
+  const cardPhoto = recipeData.photo_url || fallbackPhoto;
+  const hasPhoto = cardPhoto && cardPhoto.trim() !== '' && cardPhoto !== 'none';
 
   return (
     <View style={styles.recipeCard}>
       {hasPhoto && (
-        <Image source={{ uri: recipeData.photo_url }} style={styles.cardImage} resizeMode="cover" />
+        <Image source={{ uri: cardPhoto }} style={styles.cardImage} resizeMode="cover" />
       )}
       <View style={styles.cardContent}>
         <Text style={styles.cardRecipeTitle}>{recipeData.title}</Text>
@@ -33,7 +37,7 @@ const DetailedRecipeCard = ({ recipeData }) => {
         </View>
         <Text style={styles.cardSectionTitle}>🛒 Nguyên liệu:</Text>
         {recipeData.ingredients?.map((ing, index) => (
-          <Text key={index} style={styles.cardIngredientText}>• {ing.name} - {ing.amount}</Text>
+          <Text key={`${recipeData.title}-ing-${index}`} style={styles.cardIngredientText}>• {ing.name} - {ing.amount}</Text>
         ))}
         <Text style={styles.cardSectionTitle}>👨‍🍳 Cách làm:</Text>
         <Text style={styles.cardDescriptionText}>{recipeData.description}</Text>
@@ -46,11 +50,8 @@ export default function ChatScreen({ navigation }) {
   const flatListRef = useRef();
   const [isTyping, setIsTyping] = useState(false);
   const [inputText, setInputText] = useState('');
-  
-  // Khởi tạo state từ biến toàn cục
   const [messages, setMessages] = useState(sessionChatHistory);
 
-  // ĐỒNG BỘ STATE VÀO BIẾN TOÀN CỤC MỖI KHI CÓ TIN NHẮN MỚI
   useEffect(() => {
     sessionChatHistory = messages;
   }, [messages]);
@@ -62,60 +63,118 @@ export default function ChatScreen({ navigation }) {
     });
   }, [navigation]);
 
+  const findExistingRecipe = async (userText) => {
+    const allRecipes = await getAppRecipes();
+    const normalizedInput = normalizeText(userText);
+    if (!normalizedInput) return null;
+
+    return allRecipes.find((recipe) => {
+      const title = normalizeText(recipe.title);
+      const keywords = (recipe.keywords || []).map(normalizeText);
+      return title.includes(normalizedInput)
+        || normalizedInput.includes(title)
+        || keywords.some((key) => key && (normalizedInput.includes(key) || key.includes(normalizedInput)));
+    }) || null;
+  };
+
+  const buildRecipeDescription = (recipe) => {
+    if (Array.isArray(recipe.steps) && recipe.steps.length) {
+      return recipe.steps.map((step, index) => `${index + 1}. ${step}`).join('\n');
+    }
+    return String(recipe.description || '').trim();
+  };
+
+  const buildRecipePayloadText = (recipe, isExistingRecipe) => {
+    const ingredientsLines = (recipe.ingredients || []).map((item, index) => {
+      if (isExistingRecipe) {
+        return `${index}. ingredientId: ${item.ingredientId ?? 'none'}, quantity: "${item.quantity || item.amount || 'vừa đủ'}"`;
+      }
+      return `- ${item.name}: ${item.amount}`;
+    }).join('\n');
+
+    const details = [
+      `Tên món: ${recipe.title}`,
+      `recipeId: ${recipe.recipeId || 'none'}`,
+      `categoryId: ${recipe.categoryId ?? 'none'}`,
+      `categoryIds: ${Array.isArray(recipe.categoryIds) && recipe.categoryIds.length ? recipe.categoryIds.join(', ') : 'none'}`,
+      `Thời gian nấu: ${recipe.time} phút`,
+      `Số lượng ăn: ${recipe.servings} người`,
+      'Nguyên liệu:',
+      ingredientsLines || '- Đang cập nhật',
+      'Description:',
+      String(recipe.description || buildRecipeDescription(recipe) || 'Đang cập nhật')
+    ];
+
+    if (Array.isArray(recipe.keywords) && recipe.keywords.length) {
+      details.push(`keywords: ${recipe.keywords.join(', ')}`);
+    }
+
+    if (recipe.photo_url) {
+      details.push(`photo_url: ${recipe.photo_url}`);
+    }
+
+    if (Array.isArray(recipe.photosArray) && recipe.photosArray.length) {
+      details.push(`photosArray: ${recipe.photosArray.join(' | ')}`);
+    }
+
+    return details.join('\n');
+  };
+
   const sendMessage = async () => {
     const userText = inputText.trim();
-    if (userText.length === 0) return;
+    if (!userText) return;
 
     const userMsg = { id: Date.now().toString(), type: 'text', text: userText, sender: 'user' };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputText('');
     setIsTyping(true);
 
     try {
       const savedMood = (await AsyncStorage.getItem('user_current_mood')) || 'neutral';
-      const recipeJson = await generatePersonalizedRecipeJSON({
+      const [fridgeItems, existingRecipe] = await Promise.all([
+        getUserFridge(),
+        findExistingRecipe(userText),
+      ]);
+
+      const recipeJson = existingRecipe || await generatePersonalizedRecipeJSON({
         userRequest: userText,
         mood: savedMood,
       });
 
-      if (!recipeJson?.title) {
-        throw new Error('no_recipe');
-      }
+      if (!recipeJson?.title) throw new Error('no_recipe');
 
-      const ingredientsText = (recipeJson.ingredients || [])
-        .map((item) => `- ${item.name}: ${item.amount}`)
-        .join('\n');
-      const stepsText = (recipeJson.steps || [])
-        .map((step, index) => `${index + 1}. ${step}`)
-        .join('\n');
+      const fridgeLine = fridgeItems.length
+        ? fridgeItems.slice(0, 6).join(', ')
+        : 'Hiện chưa có dữ liệu tủ lạnh.';
 
-      const aiText = [
-        `Tên món: ${recipeJson.title}`,
-        `Thời gian nấu: ${recipeJson.time} phút`,
-        `Số lượng ăn: ${recipeJson.servings} người`,
-        'Nguyên liệu:',
-        ingredientsText || '- Đang cập nhật',
-        'Các bước làm:',
-        stepsText || '1. Đang cập nhật'
-      ].join('\n');
+      const msgFound = {
+        id: `${Date.now()}-found`,
+        type: 'text',
+        text: `${existingRecipe ? 'Mình đã tìm thấy món có sẵn trong recipes 🎯' : 'Mình đã tìm thấy món phù hợp ✅'}\nMón: ${recipeJson.title}\nTrong tủ lạnh hiện có: ${fridgeLine}`,
+        sender: 'ai'
+      };
 
-      const textMsg = { id: Date.now().toString(), type: 'text', text: aiText, sender: 'ai' };
+      const detailedSteps = buildRecipeDescription(recipeJson);
+      const fullRecipeText = buildRecipePayloadText(recipeJson, Boolean(existingRecipe));
+
+      const textMsg = { id: `${Date.now()}-detail`, type: 'text', text: fullRecipeText, sender: 'ai' };
       const cardMsg = {
-        id: (Date.now() + 1).toString(),
+        id: `${Date.now()}-card`,
         type: 'recipe_card',
         recipeData: {
           ...recipeJson,
-          description: (recipeJson.steps || []).map((step, index) => `${index + 1}. ${step}`).join('\n')
+          photo_url: recipeJson.photo_url || (Array.isArray(recipeJson.photosArray) ? recipeJson.photosArray[0] : ''),
+          description: detailedSteps,
         },
         sender: 'ai'
       };
 
-      setMessages(prev => [...prev, textMsg, cardMsg]);
+      setMessages((prev) => [...prev, msgFound, textMsg, cardMsg]);
     } catch (_error) {
-      setMessages(prev => [...prev, {
+      setMessages((prev) => [...prev, {
         id: Date.now().toString(),
         type: 'text',
-        text: 'Tên món: Chưa xác định\nThời gian nấu: 20 phút\nSố lượng ăn: 2 người\nNguyên liệu:\n- Trứng: 2 quả\n- Cơm nguội: 1 bát\nCác bước làm:\n1. Phi thơm nguyên liệu.\n2. Xào chín và nêm vừa ăn.\n3. Dùng nóng.',
+        text: 'Mình chưa lấy được công thức lúc này, bạn thử lại giúp mình nhé.',
         sender: 'ai'
       }]);
     } finally {
@@ -133,7 +192,7 @@ export default function ChatScreen({ navigation }) {
             <Text style={[styles.messageText, isUser ? styles.userText : styles.aiText]}>{item.text}</Text>
           </View>
         ) : (
-          <View style={{ width: '85%', marginTop: 4 }}> 
+          <View style={{ width: '85%', marginTop: 4 }}>
             <DetailedRecipeCard recipeData={item.recipeData} />
           </View>
         )}
@@ -142,27 +201,25 @@ export default function ChatScreen({ navigation }) {
   };
 
   return (
-    <ImageBackground 
-      source={require('../../../assets/chatBG.png')} 
-      style={{ flex: 1 }} // Để ảnh tràn màn hình
+    <ImageBackground
+      source={require('../../../assets/chatBG.png')}
+      style={{ flex: 1 }}
       resizeMode="cover"
     >
-      <View style={{ flex: 1, backgroundColor: 'rgba(255, 254, 254, 0.8)' }}> 
+      <View style={{ flex: 1, backgroundColor: 'rgba(255, 254, 254, 0.8)' }}>
         <SafeAreaView style={styles.container}>
-          <FlatList 
-            ref={flatListRef} 
-            data={messages} 
-            renderItem={renderItem} 
-            keyExtractor={item => item.id} 
-            contentContainerStyle={styles.listContent} 
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })} 
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderItem}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.listContent}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />
 
-          {isTyping && (
-            <CookingLoader />
-          )}
+          {isTyping && (<CookingLoader />)}
 
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
             <View style={styles.inputWrapper}>
               <View style={styles.inputContainer}>
                 <TextInput style={styles.input} placeholder="Bạn muốn ăn gì? 🍲" value={inputText} onChangeText={setInputText} multiline />
@@ -173,31 +230,28 @@ export default function ChatScreen({ navigation }) {
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
-
       </View>
     </ImageBackground>
   );
 }
-// --- COMPONENT LOADER: ẢNH + DẤU CHẤM ---
+
 const CookingLoader = () => {
   const dot1 = React.useRef(new Animated.Value(0)).current;
   const dot2 = React.useRef(new Animated.Value(0)).current;
   const dot3 = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    // Chạy Animation Dấu chấm (Hàm tạo hiệu ứng nảy)
     const bounceDot = (anim, delay) => {
       setTimeout(() => {
         Animated.loop(
           Animated.sequence([
-            Animated.timing(anim, { toValue: -6, duration: 400, useNativeDriver: true }), 
+            Animated.timing(anim, { toValue: -6, duration: 400, useNativeDriver: true }),
             Animated.timing(anim, { toValue: 0, duration: 400, useNativeDriver: true }),
           ])
         ).start();
       }, delay);
     };
 
-    //3 dấu chấm lệch tạo hình sóng
     bounceDot(dot1, 0);
     bounceDot(dot2, 150);
     bounceDot(dot3, 300);
@@ -206,7 +260,7 @@ const CookingLoader = () => {
   return (
     <View style={styles.loaderContainer}>
       <Image
-        source={require('../../../assets/icons/cooking.png')}  
+        source={require('../../../assets/icons/cooking.png')}
         style={styles.loaderImage}
         resizeMode="contain"
       />
@@ -232,11 +286,9 @@ const styles = StyleSheet.create({
   aiBubble: { backgroundColor: '#F4F4F5', borderBottomLeftRadius: 4 },
   aiText: { color: '#000000', fontSize: 15 },
   inputWrapper: { padding: 10, borderTopWidth: 1, borderColor: '#ffffff' },
-  inputContainer: { flexDirection: 'row', backgroundColor: '#ffffff', borderRadius: 30, paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center',borderColor: '#e9e6e6', borderWidth: 1 },
+  inputContainer: { flexDirection: 'row', backgroundColor: '#ffffff', borderRadius: 30, paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center', borderColor: '#e9e6e6', borderWidth: 1 },
   input: { flex: 1, paddingHorizontal: 15, fontSize: 16, maxHeight: 100 },
   sendButton: { backgroundColor: '#000000', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  typingContainer: { marginLeft: 54, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
-  typingText: { color: '#666', fontSize: 12, marginLeft: 8 },
   recipeCard: { backgroundColor: '#fff', borderRadius: 15, overflow: 'hidden', borderWidth: 1, borderColor: '#E4E4E7', marginBottom: 5 },
   cardImage: { width: '100%', height: 180 },
   cardContent: { padding: 16 },
@@ -246,32 +298,29 @@ const styles = StyleSheet.create({
   cardSectionTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 12, marginBottom: 8, color: '#27272A' },
   cardIngredientText: { fontSize: 14, color: '#3F3F46', marginBottom: 4, paddingLeft: 4 },
   cardDescriptionText: { fontSize: 14, color: '#3F3F46', lineHeight: 22 },
-  // ... Các style cũ giữ nguyên
-
-// --- Style mới cho Loader ---
-loaderContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  padding: 12,
-  marginLeft: 15,
-  marginTop: 10,
-},
-loaderImage: {
-  width: 30,
-  height: 30,
-  marginRight: 8,
-},
-dotsWrapper: {
-  flexDirection: 'row',
-  marginLeft: 4,
-  height: 10,
-  alignItems: 'center',
-},
-dot: {
-  width: 4,
-  height: 4,
-  borderRadius: 2,
-  backgroundColor: '#000000',
-  marginHorizontal: 2, // Khoảng cách giữa các chấm
-},
+  loaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    marginLeft: 15,
+    marginTop: 10,
+  },
+  loaderImage: {
+    width: 30,
+    height: 30,
+    marginRight: 8,
+  },
+  dotsWrapper: {
+    flexDirection: 'row',
+    marginLeft: 4,
+    height: 10,
+    alignItems: 'center',
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#000000',
+    marginHorizontal: 2,
+  },
 });

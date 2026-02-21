@@ -134,13 +134,53 @@ export const getUserPreferences = async () => {
 
 export const getAppRecipes = async () => {
   try {
-    const snap = await getDocs(collection(db, 'recipes'));
-    return snap.docs.map(doc => ({
-      recipeId: doc.data().recipeId || doc.id,
-      title: doc.data().title,
-      photo_url: doc.data().photo_url || '',
-      steps: doc.data().description ? doc.data().description.split('\n') : []
-    }));
+    const [recipesSnap, ingredientsSnap] = await Promise.all([
+      getDocs(collection(db, 'recipes')),
+      getDocs(collection(db, 'ingredients')),
+    ]);
+
+    const ingredientMap = new Map(
+      ingredientsSnap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const key = String(data.ingredientId ?? docSnap.id);
+        return [key, data.name || 'Nguyên liệu'];
+      })
+    );
+
+    return recipesSnap.docs.map((docSnap) => {
+      const data = docSnap.data();
+      const normalizedIngredients = Array.isArray(data.ingredients)
+        ? data.ingredients
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const ingredientId = item.ingredientId ?? item.id;
+            const ingredientName = item.name || ingredientMap.get(String(ingredientId)) || 'Nguyên liệu';
+            const quantity = String(item.quantity || item.amount || 'vừa đủ');
+            return {
+              ingredientId: ingredientId ?? null,
+              quantity,
+              name: ingredientName,
+              amount: quantity,
+            };
+          })
+          .filter(Boolean)
+        : [];
+
+      return {
+        recipeId: data.recipeId || docSnap.id,
+        categoryId: data.categoryId ?? null,
+        categoryIds: Array.isArray(data.categoryIds) ? data.categoryIds : [],
+        title: data.title,
+        photo_url: data.photo_url || '',
+        photosArray: Array.isArray(data.photosArray) ? data.photosArray : [],
+        keywords: Array.isArray(data.keywords) ? data.keywords : [],
+        time: data.time,
+        servings: data.servings,
+        description: data.description || '',
+        ingredients: normalizedIngredients,
+        steps: data.description ? data.description.split('\n').map((step) => step.replace(/^--\s*/, '').trim()).filter(Boolean) : []
+      };
+    });
   } catch (_e) { return []; }
 };
 
@@ -202,10 +242,15 @@ const normalizeRecipePayload = (payload, userRequest = '') => {
       .filter(Boolean);
 
   return {
+    recipeId: payload.recipeId || null,
+    categoryId: payload.categoryId ?? null,
+    categoryIds: Array.isArray(payload.categoryIds) ? payload.categoryIds : [],
+    keywords: Array.isArray(payload.keywords) ? payload.keywords : [],
     title: String(payload.title || userRequest || 'Món gợi ý').trim(),
     time: Number(payload.time) > 0 ? Number(payload.time) : 25,
     servings: Number(payload.servings) > 0 ? Number(payload.servings) : 2,
     photo_url: String(payload.photo_url || '').trim(),
+    photosArray: Array.isArray(payload.photosArray) ? payload.photosArray.filter(Boolean) : [],
     ingredients: ingredients.length ? ingredients : [{ name: 'Gia vị cơ bản', amount: 'vừa đủ' }],
     steps: steps.length ? steps : ['Sơ chế nguyên liệu.', 'Nấu chín món và nêm nếm vừa ăn.', 'Dùng nóng.']
   };
