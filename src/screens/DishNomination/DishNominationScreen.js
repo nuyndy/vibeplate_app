@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, ScrollView, TouchableOpacity, 
   Image, Alert, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Modal, FlatList
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // Thêm icon để làm nút Back
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { db, auth } from '../../firebase/firebaseConfig'; 
 import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
