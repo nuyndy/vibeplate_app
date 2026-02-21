@@ -1,4 +1,3 @@
-import React from "react";
 import { TouchableOpacity, Image, View, Text, StyleSheet } from "react-native";
 
 export default function MenuImage(props) {
