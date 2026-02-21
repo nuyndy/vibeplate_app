@@ -8,11 +8,12 @@ import { Ionicons,MaterialCommunityIcons } from '@expo/vector-icons';
 import MenuImage from '../../components/MenuImage/MenuImage';
 
 // Gọi hàm từ file AI
-import { sendMessageToGemini, generateRecipeJSON } from '../Services/AIService'; 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { generatePersonalizedRecipeJSON } from '../Services/AIService'; 
 
 // BIẾN TOÀN CỤC LƯU LỊCH SỬ CHAT
 let sessionChatHistory = [
-  { id: '1', type: 'text', text: 'Chào bạn! 👋 Hôm nay bạn muốn nấu món gì? Mình sẽ kiểm tra tủ lạnh và tâm trạng của bạn để gợi ý nhé! ✨', sender: 'ai' }
+  { id: '1', type: 'text', text: 'Chào bạn! 👋 Mình sẽ gợi ý món theo đúng format: tên món, thời gian nấu, số lượng ăn, nguyên liệu và các bước làm. ✨', sender: 'ai' }
 ];
 
 const DetailedRecipeCard = ({ recipeData }) => {
@@ -66,47 +67,59 @@ export default function ChatScreen({ navigation }) {
     if (userText.length === 0) return;
 
     const userMsg = { id: Date.now().toString(), type: 'text', text: userText, sender: 'user' };
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
+    setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsTyping(true);
 
-    const aiHistory = nextMessages
-      .filter(m => m.type === 'text')
-      .map(m => ({ sender: m.sender === 'user' ? 'user' : 'assistant', text: m.text }));
-
     try {
-      const lowerText = userText.toLowerCase();
-      const recipeKeywords = ['công thức', 'cách làm', 'nấu', 'món', 'nguyên liệu'];
-      const isAskingForRecipe = recipeKeywords.some(keyword => lowerText.includes(keyword));
+      const savedMood = (await AsyncStorage.getItem('user_current_mood')) || 'neutral';
+      const recipeJson = await generatePersonalizedRecipeJSON({
+        userRequest: userText,
+        mood: savedMood,
+      });
 
-      if (isAskingForRecipe) {
-         const recipeJson = await generateRecipeJSON(userText);
-         if (recipeJson?.title && recipeJson?.description) {
-            // THÊM STICKER VÀO PHẦN TRẢ LỜI TỰ ĐỘNG
-            const introMsg = `Tuyệt vời! 🌟 Mình đã tìm thấy công thức món ${recipeJson.title} và tối ưu kết hợp với đồ trong tủ lạnh cho bạn đây! 🥣🥗`;
-
-            const textIntroMsg = {
-                id: Date.now().toString(),
-                type: 'text',
-                text: recipeJson.warningMessage || introMsg,
-                sender: 'ai'
-            };
-            const cardMsg = { id: (Date.now() + 1).toString(), type: 'recipe_card', recipeData: recipeJson, sender: 'ai' };
-            setMessages(prev => [...prev, textIntroMsg, cardMsg]);
-         } else {
-            const textReply = await sendMessageToGemini(userText, aiHistory);
-            setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: textReply, sender: 'ai' }]);
-         }
-      } else {
-          const textReply = await sendMessageToGemini(userText, aiHistory);
-          // Thêm sticker nhẹ vào cuối câu trả lời bình thường của AI
-          setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: textReply, sender: 'ai' }]);
+      if (!recipeJson?.title) {
+        throw new Error('no_recipe');
       }
-    } catch (error) {
-        setMessages(prev => [...prev, { id: Date.now().toString(), type: 'text', text: 'Lỗi rồi, thử lại nhé! 😅', sender: 'ai' }]);
+
+      const ingredientsText = (recipeJson.ingredients || [])
+        .map((item) => `- ${item.name}: ${item.amount}`)
+        .join('\n');
+      const stepsText = (recipeJson.steps || [])
+        .map((step, index) => `${index + 1}. ${step}`)
+        .join('\n');
+
+      const aiText = [
+        `Tên món: ${recipeJson.title}`,
+        `Thời gian nấu: ${recipeJson.time} phút`,
+        `Số lượng ăn: ${recipeJson.servings} người`,
+        'Nguyên liệu:',
+        ingredientsText || '- Đang cập nhật',
+        'Các bước làm:',
+        stepsText || '1. Đang cập nhật'
+      ].join('\n');
+
+      const textMsg = { id: Date.now().toString(), type: 'text', text: aiText, sender: 'ai' };
+      const cardMsg = {
+        id: (Date.now() + 1).toString(),
+        type: 'recipe_card',
+        recipeData: {
+          ...recipeJson,
+          description: (recipeJson.steps || []).map((step, index) => `${index + 1}. ${step}`).join('\n')
+        },
+        sender: 'ai'
+      };
+
+      setMessages(prev => [...prev, textMsg, cardMsg]);
+    } catch (_error) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'text',
+        text: 'Tên món: Chưa xác định\nThời gian nấu: 20 phút\nSố lượng ăn: 2 người\nNguyên liệu:\n- Trứng: 2 quả\n- Cơm nguội: 1 bát\nCác bước làm:\n1. Phi thơm nguyên liệu.\n2. Xào chín và nêm vừa ăn.\n3. Dùng nóng.',
+        sender: 'ai'
+      }]);
     } finally {
-        setIsTyping(false);
+      setIsTyping(false);
     }
   };
 

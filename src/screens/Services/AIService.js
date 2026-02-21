@@ -1,5 +1,5 @@
 import { db, auth } from '../../firebase/firebaseConfig';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 
 const OPENROUTER_API_KEY =
   process.env.EXPO_PUBLIC_OPENROUTER_API_KEY_CHAT || process.env.EXPO_PUBLIC_OPENROUTER_KEY;
@@ -115,6 +115,17 @@ export const getUserPreferences = async () => {
   try {
     const user = auth.currentUser;
     if (!user || !user.email) return null;
+
+    const byEmailRef = doc(db, 'user_preferences', user.email);
+    const byEmailSnap = await getDoc(byEmailRef);
+    if (byEmailSnap.exists()) return byEmailSnap.data();
+
+    if (user.uid) {
+      const byUidRef = doc(db, 'user_preferences', user.uid);
+      const byUidSnap = await getDoc(byUidRef);
+      if (byUidSnap.exists()) return byUidSnap.data();
+    }
+
     const q = query(collection(db, 'user_preferences'), where('email', '==', user.email));
     const snap = await getDocs(q);
     return snap.empty ? null : snap.docs[0].data();
@@ -169,6 +180,212 @@ export const generateRecipeJSON = async (userRequest) => {
       recipeId: parsed.recipeId === 'none' ? `ai_gen_${Date.now()}` : parsed.recipeId
     };
   } catch (_error) { return null; }
+};
+
+const normalizeRecipePayload = (payload, userRequest = '') => {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const ingredients = Array.isArray(payload.ingredients)
+    ? payload.ingredients
+      .map(item => ({
+        name: String(item?.name || '').trim(),
+        amount: String(item?.amount || '').trim() || 'vừa đủ'
+      }))
+      .filter(item => item.name.length > 0)
+    : [];
+
+  const steps = Array.isArray(payload.steps)
+    ? payload.steps.map(step => String(step || '').trim()).filter(Boolean)
+    : String(payload.description || '')
+      .split('\n')
+      .map(step => step.replace(/^\d+\.\s*/, '').trim())
+      .filter(Boolean);
+
+  return {
+    title: String(payload.title || userRequest || 'Món gợi ý').trim(),
+    time: Number(payload.time) > 0 ? Number(payload.time) : 25,
+    servings: Number(payload.servings) > 0 ? Number(payload.servings) : 2,
+    photo_url: String(payload.photo_url || '').trim(),
+    ingredients: ingredients.length ? ingredients : [{ name: 'Gia vị cơ bản', amount: 'vừa đủ' }],
+    steps: steps.length ? steps : ['Sơ chế nguyên liệu.', 'Nấu chín món và nêm nếm vừa ăn.', 'Dùng nóng.']
+  };
+};
+
+export const generatePersonalizedRecipeJSON = async ({ userRequest, mood = 'neutral' }) => {
+  try {
+    const [fridgeItems, preferences] = await Promise.all([
+      getUserFridge(),
+      getUserPreferences()
+    ]);
+
+    const allergies = preferences?.allergies || [];
+    const dislikedIngredients = preferences?.dislikedIngredients || [];
+    const favoriteTastes = preferences?.favoriteTastes || [];
+
+    if (!hasValidAIConfig()) {
+      return normalizeRecipePayload({
+        title: userRequest || 'Cơm chiên trứng',
+        time: 20,
+        servings: 2,
+        ingredients: [
+          { name: 'Nguyên liệu sẵn trong tủ', amount: fridgeItems[0] || 'vừa đủ' },
+          { name: 'Gia vị', amount: 'vừa đủ' }
+        ],
+        steps: [
+          'Sơ chế toàn bộ nguyên liệu.',
+          'Làm nóng chảo, xào nguyên liệu chính rồi nêm gia vị.',
+          'Nấu chín, trình bày ra đĩa và dùng nóng.'
+        ]
+      }, userRequest);
+    }
+
+    const prompt = `Bạn là đầu bếp AI của VibePlate.
+Hãy sinh đúng 1 công thức món ăn cá nhân hóa theo yêu cầu.
+Yêu cầu người dùng: ${userRequest}
+Tâm trạng hiện tại: ${mood}
+Nguyên liệu có sẵn: ${fridgeItems.length ? fridgeItems.join(', ') : 'không có dữ liệu'}
+allergies: ${allergies.length ? allergies.join(', ') : 'không có'}
+dislikedIngredients: ${dislikedIngredients.length ? dislikedIngredients.join(', ') : 'không có'}
+favoriteTastes: ${favoriteTastes.length ? favoriteTastes.join(', ') : 'không có'}
+
+BẮT BUỘC:
+- Trả về JSON hợp lệ duy nhất, không markdown, không giải thích.
+- JSON phải có các khóa: title, time, servings, ingredients, steps.
+- time là số phút, servings là số người.
+- ingredients là mảng object {"name":"...","amount":"..."}.
+- steps là mảng chuỗi mô tả từng bước.
+- Không dùng nguyên liệu nằm trong allergies hoặc dislikedIngredients.`;
+
+    const data = await requestOpenRouter({
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.25,
+      maxTokens: 650,
+    });
+
+    const resContent = data?.choices?.[0]?.message?.content || '';
+    const jsonSlice = resContent.includes('{')
+      ? resContent.substring(resContent.indexOf('{'), resContent.lastIndexOf('}') + 1)
+      : '';
+
+    if (!jsonSlice) {
+      return normalizeRecipePayload({
+        title: userRequest,
+        time: 25,
+        servings: 2,
+        ingredients: [{ name: 'Nguyên liệu sẵn có', amount: 'vừa đủ' }],
+        steps: ['Sơ chế nguyên liệu.', 'Nấu chín và nêm nếm.', 'Dùng nóng.']
+      }, userRequest);
+    }
+
+    const parsed = JSON.parse(jsonSlice);
+    return normalizeRecipePayload(parsed, userRequest);
+  } catch (_error) {
+    return normalizeRecipePayload({
+      title: userRequest,
+      time: 25,
+      servings: 2,
+      ingredients: [{ name: 'Nguyên liệu sẵn có', amount: 'vừa đủ' }],
+      steps: ['Sơ chế nguyên liệu.', 'Nấu chín và nêm nếm.', 'Dùng nóng.']
+    }, userRequest);
+  }
+};
+
+const MOOD_KEYWORDS = {
+  happy: ['lẩu', 'nướng', 'pizza', 'gà nướng', 'bbq'],
+  sad: ['chè', 'súp', 'cháo', 'bánh', 'mì'],
+  tired: ['cháo', 'súp', 'canh', 'phở', 'mì'],
+  hungry: ['cơm', 'bún', 'phở', 'xào', 'kho'],
+  neutral: ['cơm', 'canh', 'xào', 'mì']
+};
+
+const scoreRecipeForUser = (recipe, profile) => {
+  const {
+    mood = 'neutral',
+    favoriteTastes = [],
+    allergies = [],
+    dislikedIngredients = []
+  } = profile;
+
+  const title = (recipe?.title || '').toLowerCase();
+  if (!title) return -999;
+
+  const blockedWords = [...allergies, ...dislikedIngredients].map(i => String(i || '').toLowerCase());
+  if (blockedWords.some(w => w && title.includes(w))) return -999;
+
+  let score = 0;
+  if ((MOOD_KEYWORDS[mood] || []).some(k => title.includes(k))) score += 3;
+  if (favoriteTastes.some(t => title.includes(String(t || '').toLowerCase()))) score += 2;
+  if (title.includes('chay') && blockedWords.some(w => ['thịt', 'hải sản', 'gà', 'bò'].includes(w))) score += 1;
+
+  return score;
+};
+
+export const suggestDishesForUser = async ({ userRequest, mood = 'neutral' }) => {
+  try {
+    const [fridgeItems, preferences, appRecipes] = await Promise.all([
+      getUserFridge(),
+      getUserPreferences(),
+      getAppRecipes()
+    ]);
+
+    const allergies = preferences?.allergies || [];
+    const dislikedIngredients = preferences?.dislikedIngredients || [];
+    const favoriteTastes = preferences?.favoriteTastes || [];
+
+    const fallbackTitles = (appRecipes || [])
+      .map(recipe => ({ recipe, score: scoreRecipeForUser(recipe, { mood, favoriteTastes, allergies, dislikedIngredients }) }))
+      .filter(item => item.score > -999)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map(item => item.recipe.title)
+      .filter(Boolean);
+
+    if (!hasValidAIConfig()) {
+      return fallbackTitles.length > 0
+        ? fallbackTitles.join('\n')
+        : 'Cơm chiên trứng\nCanh rau củ\nMì xào rau';
+    }
+
+    const systemInstruction = `Bạn là AI gợi ý món ăn cho app VibePlate.
+Nhiệm vụ: chỉ đưa ra tên món ăn, không công thức, không giải thích, không markdown.
+Chỉ dựa vào:
+- Nguyên liệu hiện có: ${fridgeItems.length ? fridgeItems.join(', ') : 'không có dữ liệu'}
+- Tâm trạng hiện tại: ${mood}
+- Hồ sơ cá nhân hóa user_preferences:
+  + allergies: ${allergies.length ? allergies.join(', ') : 'không có'}
+  + dislikedIngredients: ${dislikedIngredients.length ? dislikedIngredients.join(', ') : 'không có'}
+  + favoriteTastes: ${favoriteTastes.length ? favoriteTastes.join(', ') : 'không có'}
+- Người dùng yêu cầu: ${userRequest}
+
+Ràng buộc:
+- Loại bỏ món có chứa nguyên liệu thuộc allergies hoặc dislikedIngredients.
+- Ưu tiên món phù hợp favoriteTastes và tâm trạng.
+- Chỉ trả về tối đa 6 dòng, mỗi dòng đúng 1 tên món.
+- Không thêm ký tự đầu dòng, không số thứ tự, không lời mở đầu/kết thúc.`;
+
+    const data = await requestOpenRouter({
+      messages: [{ role: 'user', content: systemInstruction }],
+      temperature: 0.2,
+      maxTokens: 180,
+    });
+
+    const resContent = data?.choices?.[0]?.message?.content || '';
+    const cleanedLines = resContent
+      .split('\n')
+      .map(line => line.replace(/^\s*[-*\d.)]+\s*/, '').trim())
+      .filter(Boolean)
+      .slice(0, 6);
+
+    if (cleanedLines.length > 0) {
+      return cleanedLines.join('\n');
+    }
+
+    return fallbackTitles.length > 0
+      ? fallbackTitles.join('\n')
+      : 'Cơm chiên trứng\nCanh rau củ\nMì xào rau';
+  } catch (_error) {
+    return 'Cơm chiên trứng\nCanh rau củ\nMì xào rau';
+  }
 };
 
 export const sendMessageToGemini = async (
