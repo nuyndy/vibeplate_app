@@ -13,7 +13,15 @@ import { db, auth } from '../../firebase/firebaseConfig';
 import { sendMessageToGemini } from '../Services/AIService'; 
 
 export default function CookAI({ route, navigation }) {
-  const { steps = [], title = "Món ăn", ingredients = [] } = route.params || {};
+  const rawParams = route.params || {};
+  const title = rawParams.title || "Món ăn";
+  const ingredients = rawParams.ingredients || [];
+
+  const steps = Array.isArray(rawParams.steps) 
+    ? rawParams.steps.filter(s => s && s.trim().length > 0) 
+    : (typeof rawParams.steps === 'string' 
+        ? rawParams.steps.split('\n').filter(s => s && s.trim().length > 0) 
+        : []);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isListening, setIsListening] = useState(false);
