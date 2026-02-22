@@ -4,18 +4,14 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal"
-    },
     "preview": {
+      "node": "20.18.3",
       "android": {
-        "buildType": "apk"
-      },
-      "ios": {
-        "distribution": "internal" 
+        "buildType": "apk",
+        "image": "latest"
       }
-    },
+    }
+  },
     "production": {
       "autoIncrement": true
     }
