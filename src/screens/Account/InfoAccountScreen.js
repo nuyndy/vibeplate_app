@@ -7,13 +7,12 @@ import * as ImagePicker from 'expo-image-picker';
 
 // --- IMPORT FIREBASE ---
 import { auth, db } from '../../firebase/firebaseConfig';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 
 const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
 const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-const CLOUDINARY_URL = CLOUD_NAME ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload` : '';
-const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
+const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
 const COLORS = {
   primary: '#000000',
@@ -44,7 +43,6 @@ const InputField = memo(({ label, value, onChange, icon, editable = true }) => (
 export default function InfoAccount({ navigation }) {
   const user = auth.currentUser;
 
-  // --- STATE TẬP TRUNG ---
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -99,60 +97,111 @@ export default function InfoAccount({ navigation }) {
   }, [navigation]);
 
   const pickImage = async () => {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
       Alert.alert("Cần quyền", "Ứng dụng cần truy cập ảnh để đổi avatar.");
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.Images,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5,
+      quality: 0.7,
     });
+
     if (!result.canceled) {
       setFormData(prev => ({ ...prev, avatar: result.assets[0].uri }));
     }
   };
 
+  // --- HÀM UPLOAD FIX LỖI ---
   const uploadToCloudinary = async (imageUri) => {
-    if (!hasCloudinaryConfig()) return null;
+    if (!CLOUD_NAME || !UPLOAD_PRESET) {
+      console.error("Lỗi: Thiếu cấu hình Cloudinary trong .env");
+      return null;
+    }
 
     const data = new FormData();
     const filename = imageUri.split('/').pop();
-    const type = `image/${filename.split('.').pop()}`;
-    data.append('file', { uri: imageUri, name: filename, type });
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1]}` : `image`;
+
+    data.append('file', {
+      uri: imageUri,
+      name: filename,
+      type: type,
+    });
     data.append('upload_preset', UPLOAD_PRESET);
 
-    const res = await fetch(CLOUDINARY_URL, { method: 'POST', body: data });
-    const result = await res.json();
-    return result.secure_url;
+    try {
+      const response = await fetch(CLOUDINARY_URL, {
+        method: 'POST',
+        body: data,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      const result = await response.json();
+      return result.secure_url || null;
+    } catch (error) {
+      console.error("Cloudinary Upload Error:", error);
+      return null;
+    }
   };
 
   const handleSave = async () => {
+    if (!formData.name.trim()) {
+      Alert.alert("Thông báo", "Vui lòng nhập họ và tên.");
+      return;
+    }
+
     setLoading(true);
     try {
       let finalPhotoUrl = formData.avatar;
 
-      // Chỉ upload nếu là file local
-      if (formData.avatar.startsWith('file://')) {
-        finalPhotoUrl = await uploadToCloudinary(formData.avatar);
+      // Nếu avatar là file local (vừa chọn xong) thì mới upload
+      if (formData.avatar.startsWith('file://') || formData.avatar.startsWith('content://')) {
+        const uploadedUrl = await uploadToCloudinary(formData.avatar);
+        if (uploadedUrl) {
+          finalPhotoUrl = uploadedUrl;
+        } else {
+          throw new Error("Không thể tải ảnh lên máy chủ.");
+        }
       }
 
-      // Cập nhật song song Auth và Firestore
+      const userEmail = user.email.toLowerCase();
+      const userDocRef = doc(db, "users", userEmail);
+
+      // Cập nhật song song
       await Promise.all([
-        updateProfile(user, { displayName: formData.name, photoURL: finalPhotoUrl }),
-        updateDoc(doc(db, "users", user.email.toLowerCase()), {
+        updateProfile(user, { 
+          displayName: formData.name, 
+          photoURL: finalPhotoUrl 
+        }),
+        updateDoc(userDocRef, {
           displayName: formData.name,
           photo_url: finalPhotoUrl,
           location: formData.location
+        }).catch(async (err) => {
+            // Nếu document chưa tồn tại thì dùng setDoc
+            if (err.code === 'not-found') {
+                await setDoc(userDocRef, {
+                    displayName: formData.name,
+                    photo_url: finalPhotoUrl,
+                    location: formData.location,
+                    email: userEmail
+                });
+            } else throw err;
         })
       ]);
 
       Alert.alert("Thành công", "Thông tin đã được cập nhật!");
       navigation.goBack();
     } catch (error) {
-      Alert.alert("Lỗi", error.message);
+      console.error("Save Error:", error);
+      Alert.alert("Lỗi", "Có lỗi xảy ra khi lưu thông tin.");
     } finally {
       setLoading(false);
     }

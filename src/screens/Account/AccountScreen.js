@@ -75,7 +75,7 @@ export default function AccountScreen({ navigation }) {
       }
     });
 
-    const unsubFav = onSnapshot(query(collection(db, "favorites"), where("userId", "==", user.uid)), 
+    const unsubFav = onSnapshot(query(collection(db, "favorites"), where("email", "==", email)), 
       (snap) => setUserData(prev => ({ ...prev, favoriteCount: snap.size }))
     );
 

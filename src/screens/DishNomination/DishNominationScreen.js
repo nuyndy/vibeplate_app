@@ -218,7 +218,7 @@ export default function DishNominationScreen({ navigation }) {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Tên món</Text>
-              <TextInput style={styles.input} placeholder="Tên món ăn..." value={dishName} onChangeText={setDishName} />
+              <TextInput style={styles.input} placeholderTextColor={COLORS.placeholder} placeholder="Tên món ăn..." value={dishName} onChangeText={setDishName} />
             </View>
 
             <View style={styles.inputGroup}>
@@ -234,11 +234,11 @@ export default function DishNominationScreen({ navigation }) {
             <View style={styles.rowInputs}>
               <View style={styles.halfInput}>
                 <Text style={styles.label}>Thời gian (phút)</Text>
-                <TextInput style={styles.input} placeholder="30" keyboardType="numeric" value={time} onChangeText={setTime} />
+                <TextInput style={styles.input} placeholderTextColor={COLORS.placeholder} placeholder="30" keyboardType="numeric" value={time} onChangeText={setTime} />
               </View>
               <View style={styles.halfInput}>
                 <Text style={styles.label}>Khẩu phần</Text>
-                <TextInput style={styles.input} placeholder="2" keyboardType="numeric" value={servings} onChangeText={setServings} />
+                <TextInput style={styles.input} placeholderTextColor={COLORS.placeholder} placeholder="2" keyboardType="numeric" value={servings} onChangeText={setServings} />
               </View>
             </View>
           </View>
@@ -267,6 +267,7 @@ export default function DishNominationScreen({ navigation }) {
             <Text style={styles.sectionHeader}>🍳 Cách làm</Text>
             <TextInput 
                 style={[styles.input, {height: 120, textAlignVertical: 'top'}]} 
+                placeholderTextColor={COLORS.placeholder}
                 placeholder="Mô tả các bước nấu ăn..." 
                 multiline 
                 value={description} 

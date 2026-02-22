@@ -2,15 +2,15 @@ import { StyleSheet } from 'react-native';
 
 export const COLORS = {
   primary: '#1b1d1c',     
-  secondary: '#928f87',   
+  secondary: '#a1a1a1',   
   bg: '#F8F9FD',          
   card: '#FFFFFF',        
   textMain: '#1A1D26',    
   textSub: '#A0A5B9',     
-  inputBg: '#F5F6FA',     
-  danger: '#FF6B6B',      
+  inputBg: '#f1f1f1',     
+  danger: '#eeeeee',      
   success: '#4CAF50', 
-  placeholder: '#959995',
+  placeholder: '#bdbdbd',
 };
 
 export const styles = StyleSheet.create({
@@ -31,8 +31,13 @@ export const styles = StyleSheet.create({
   // --- INPUT ---
   inputGroup: { marginTop: 15 },
   input: { 
-    backgroundColor: COLORS.inputBg, borderRadius: 14, paddingHorizontal: 20, paddingVertical: 18, 
-    fontSize: 15, color: COLORS.textMain, fontWeight: '500', placeholderTextColor: COLORS.placeholder
+    backgroundColor: COLORS.inputBg, 
+    borderRadius: 14, 
+    paddingHorizontal: 20, 
+    paddingVertical: 18, 
+    fontSize: 15, 
+    color: COLORS.textMain, 
+    fontWeight: '500',
   },
   rowInputs: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginTop: 15 },
   halfInput: { flex: 1 },
@@ -43,7 +48,10 @@ export const styles = StyleSheet.create({
     marginTop: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' 
   },
   selectText: { fontSize: 15, color: COLORS.textMain, fontWeight: '500' },
-  selectPlaceholder: { fontSize: 15, color: COLORS.textSub },
+  selectPlaceholder: { 
+    fontSize: 15, 
+    color: COLORS.placeholder
+  },
 
   // --- COVER IMAGE ---
   coverPicker: { 
