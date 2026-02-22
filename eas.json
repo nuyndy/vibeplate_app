@@ -5,17 +5,9 @@
   },
   "build": {
     "preview": {
-      "node": "20.18.3",
       "android": {
-        "buildType": "apk",
-        "image": "latest"
+        "buildType": "apk"
       }
-    },
-    "production": {
-      "autoIncrement": true
     }
-  },
-  "submit": {
-    "production": {}
   }
 }
