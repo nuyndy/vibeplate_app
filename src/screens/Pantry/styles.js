@@ -12,7 +12,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   
   // =================================================
-  // 1. STYLE THÈ SẢN PHẨM (CARD)
+  // 1. STYLE THẺ SẢN PHẨM (CARD)
   // =================================================
   cardWrapper: { 
     width: ITEM_WIDTH, 
@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end', // Modal trượt từ dưới lên
+    justifyContent: 'flex-end', 
   },
   modalBody: {
     backgroundColor: '#fff',
@@ -95,6 +95,8 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     width: '100%',
+    // Giới hạn chiều cao để không bị tràn khi hiện bàn phím
+    maxHeight: height * 0.85, 
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.1,
@@ -107,78 +109,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#DDD',
     borderRadius: 3,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: 15,
   },
   modalMainTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#1A1A1A',
-    marginBottom: 20,
+    marginBottom: 15,
     textAlign: 'center',
   },
-  modalImageWrapper: {
-    width: '100%',
-    height: 160,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginBottom: 20,
-    backgroundColor: '#F0F0F0',
-  },
-  modalImagePreview: {
-    width: '100%',
-    height: '100%',
-  },
-  reTakePhotoBtn: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  reTakePhotoText: { color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 5 },
   photoPlaceholder: {
     width: '100%',
-    height: 100,
+    height: 120, 
     borderRadius: 20,
     borderWidth: 2,
     borderColor: '#F0F0F0',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 15,
+    backgroundColor: '#FAFAFA',
+    overflow: 'hidden'
   },
-  inputGroup: { marginBottom: 15 },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#666',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  modernInput: {
+    height: 54, 
     backgroundColor: '#F5F7FA',
     borderRadius: 15,
     paddingHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#EEE',
-  },
-  inputIcon: { marginRight: 10 },
-  modernInput: {
-    flex: 1,
-    height: 48,
     fontSize: 15,
     color: '#333',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#EEE',
   },
   modalFooter: {
     flexDirection: 'row',
     gap: 12,
     marginTop: 10,
+    paddingTop: 10,
   },
   modernBtnCancel: {
     flex: 1,
@@ -188,18 +156,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
   },
-  btnCancelText: { fontSize: 16, fontWeight: '700', color: '#888' },
   modernBtnSave: {
     flex: 2,
     height: 54,
     borderRadius: 15,
-    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#2C3E50',
-    gap: 8,
   },
-  btnSaveText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 
   // =================================================
   // 3. UI KHÁC

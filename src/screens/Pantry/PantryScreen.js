@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useState, useEffect, useRef, useCallback, useMe
 import { 
   FlatList, Text, View, ActivityIndicator, Modal, TextInput, 
   Alert, TouchableOpacity, StatusBar, Image, Animated, 
-  KeyboardAvoidingView, Platform, RefreshControl, LayoutAnimation, UIManager 
+  KeyboardAvoidingView, Platform, RefreshControl, LayoutAnimation, UIManager, ScrollView
 } from "react-native";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -230,20 +230,87 @@ export default function PantryScreen(props) {
 
   if (isTakingPhoto) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
-        <CameraView 
-          style={{ width: '100%', aspectRatio: 1 }} 
-          facing="back" 
-          ref={cameraRef}
-        />
-        <TouchableOpacity style={{ alignSelf: 'center', marginTop: 30 }} onPress={async () => {
-          const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
-          setCapturedPhoto(photo.uri);
-          setIsTakingPhoto(false);
-          setModalVisible(true);
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar barStyle="light-content" />
+        
+        {/* Khung Camera bo tròn */}
+        <View style={{ 
+          width: SCREEN_WIDTH * 0.9, 
+          aspectRatio: 1, 
+          borderRadius: 40, // Bo tròn mạnh hơn cho đẹp
+          overflow: 'hidden', 
+          backgroundColor: '#222',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.2)'
         }}>
-          <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', borderWidth: 5, borderColor: '#ccc' }} />
-        </TouchableOpacity>
+          <CameraView 
+            style={{ flex: 1 }} 
+            facing="back" 
+            ref={cameraRef}
+          />
+        </View>
+
+        {/* Cụm điều khiển phía dưới */}
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          width: '100%', 
+          marginTop: 50,
+          paddingHorizontal: 30
+        }}>
+          
+          {/* Nút Hủy (bên trái) */}
+          <TouchableOpacity 
+            style={{ 
+              width: 50, 
+              height: 50, 
+              borderRadius: 25, 
+              backgroundColor: 'rgba(255,255,255,0.15)', 
+              justifyContent: 'center', 
+              alignItems: 'center',
+              marginRight: 40 // Tạo khoảng cách với nút chụp
+            }} 
+            onPress={() => {
+              setIsTakingPhoto(false);
+              setModalVisible(true);
+            }}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+
+          {/* Nút Chụp (ở giữa) */}
+          <TouchableOpacity 
+            onPress={async () => {
+              if (cameraRef.current) {
+                const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+                setCapturedPhoto(photo.uri);
+                setIsTakingPhoto(false);
+                setModalVisible(true);
+              }
+            }}
+          >
+            <View style={{ 
+              width: 80, 
+              height: 80, 
+              borderRadius: 40, 
+              backgroundColor: 'rgba(255,255,255,0.3)', 
+              justifyContent: 'center', 
+              alignItems: 'center' 
+            }}>
+              <View style={{ 
+                width: 64, 
+                height: 64, 
+                borderRadius: 32, 
+                backgroundColor: '#fff' 
+              }} />
+            </View>
+          </TouchableOpacity>
+
+          {/* View ảo bên phải để giữ nút chụp ở chính giữa (Cân bằng layout) */}
+          <View style={{ width: 50, marginLeft: 40 }} />
+
+        </View>
       </View>
     );
   }
@@ -281,27 +348,69 @@ export default function PantryScreen(props) {
 
       <Modal transparent visible={modalVisible} animationType="slide">
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBody}>
-            <Text style={styles.modalMainTitle}>{editingItem ? "Sửa thực phẩm" : "Thêm mới"}</Text>
-            
-            <TouchableOpacity style={styles.photoPlaceholder} onPress={() => { setModalVisible(false); setIsTakingPhoto(true); }}>
-               {capturedPhoto ? (
-                 <Image source={{ uri: capturedPhoto }} style={{ width: '100%', height: '100%', borderRadius: 15 }} />
-               ) : (
-                 <Ionicons name="camera-outline" size={32} color="#999" />
-               )}
-            </TouchableOpacity>
+          {/* KeyboardAvoidingView giúp đẩy form lên khi bàn phím hiện ra */}
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ width: '100%' }}
+          >
+            <View style={styles.modalBody}>
+              <View style={styles.modalHeaderLine} />
+              
+              {/* ScrollView đảm bảo không bị thiếu trường trên màn hình nhỏ */}
+              <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+                <Text style={styles.modalMainTitle}>{editingItem ? "Sửa thực phẩm" : "Thêm mới"}</Text>
+                
+                <TouchableOpacity style={styles.photoPlaceholder} onPress={() => { setModalVisible(false); setIsTakingPhoto(true); }}>
+                  {capturedPhoto ? (
+                    <Image source={{ uri: capturedPhoto }} style={{ width: '100%', height: '100%' }} />
+                  ) : (
+                    <Ionicons name="camera-outline" size={32} color="#999" />
+                  )}
+                </TouchableOpacity>
 
-            <TextInput style={styles.modernInput} placeholder="Tên món" value={newItemName} onChangeText={setNewItemName} />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TextInput style={[styles.modernInput, { flex: 1 }]} placeholder="SL" keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
-                <TextInput style={[styles.modernInput, { flex: 1 }]} placeholder="Đơn vị" value={unit} onChangeText={setUnit} />
-            </View>
-            <TextInput style={styles.modernInput} placeholder="Số ngày bảo quản" keyboardType="numeric" value={shelfLife} onChangeText={setShelfLife} />
+                {/* Trường nhập Tên món */}
+                <TextInput 
+                  style={styles.modernInput} 
+                  placeholder="Tên món ăn hoặc thực phẩm" 
+                  value={newItemName} 
+                  onChangeText={setNewItemName} 
+                />
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.modernBtnCancel} onPress={resetForm}><Text>Hủy</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.modernBtnSave} onPress={handleSaveItem}><Text style={{color: '#fff'}}>Lưu kho</Text></TouchableOpacity>
+                {/* Hàng chứa SL và Đơn vị */}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TextInput 
+                      style={[styles.modernInput, { flex: 1 }]} 
+                      placeholder="Số lượng (vd: 5)" 
+                      keyboardType="numeric" 
+                      value={quantity} 
+                      onChangeText={setQuantity} 
+                    />
+                    <TextInput 
+                      style={[styles.modernInput, { flex: 1 }]} 
+                      placeholder="Đơn vị (vd: quả)" 
+                      value={unit} 
+                      onChangeText={setUnit} 
+                    />
+                </View>
+
+                {/* Trường số ngày bảo quản */}
+                <TextInput 
+                  style={styles.modernInput} 
+                  placeholder="Số ngày bảo quản dự kiến" 
+                  keyboardType="numeric" 
+                  value={shelfLife} 
+                  onChangeText={setShelfLife} 
+                />
+
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={styles.modernBtnCancel} onPress={resetForm}>
+                    <Text style={styles.btnCancelText}>Hủy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modernBtnSave} onPress={handleSaveItem}>
+                    <Text style={{color: '#fff', fontWeight: 'bold'}}>Lưu kho</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </View>
