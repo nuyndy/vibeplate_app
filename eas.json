@@ -10,8 +10,7 @@
         "buildType": "apk",
         "image": "latest"
       }
-    }
-  },
+    },
     "production": {
       "autoIncrement": true
     }
