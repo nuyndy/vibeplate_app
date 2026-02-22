@@ -7,6 +7,16 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAI8Nsv8yv6oJ0HzFw4CipU0ol8U8ErcAU",
+        "EXPO_PUBLIC_OPENROUTER_API_KEY_CHAT": "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",
+        "EXPO_PUBLIC_API_URL": "https://openrouter.ai/api/v1/chat/completions",
+        "EXPO_PUBLIC_MODEL_NAME": "arcee-ai/trinity-large-preview:free",
+        "EXPO_PUBLIC_WEATHER_API_KEY": "30c5dcb9ceb5311e00ff1de538706272",
+        "EXPO_PUBLIC_OPENROUTER_API_KEY_WEATHER": "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",
+        "EXPO_PUBLIC_CLOUD_NAME": "devpumtqu",
+        "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "VibePlate"
       }
     }
   }
