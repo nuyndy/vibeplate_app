@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "713850148752-nkje1ac0nddquc990an700j2uost08ee.apps.googleusercontent.com",
+          "client_id": "713850148752-c2u9abl76bk7iq7tkedc4fbubatrqn22.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.vibeplate.app",
-            "certificate_hash": "f62b40bef72d0c3866a667274a9771cf39f459d8"
+            "certificate_hash": "4b20d694e493fffa1f23179da8a35a5265e5c51f"
           }
         },
         {
@@ -28,7 +28,7 @@
       ],
       "api_key": [
         {
-          "current_key": "REDACTED_SET_IN_SECURE_FIREBASE_CONFIG"
+          "current_key": "AIzaSyAJAu0wLAc9pm0FGJcmCC7Vm5vM87JGwJo"
         }
       ],
       "services": {
