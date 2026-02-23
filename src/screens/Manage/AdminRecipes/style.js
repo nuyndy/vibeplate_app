@@ -1,8 +1,18 @@
 import { StyleSheet, Dimensions } from 'react-native';
 
+// --- ĐỊNH NGHĨA MÀU SẮC (Thêm phần này để hết lỗi) ---
+export const COLORS = {
+  primary: '#1b1d1c',   // Màu đen chủ đạo của bạn
+  edit: '#007bff',      // Màu xanh cho nút sửa
+  danger: '#000000',    // Màu đỏ cho nút xóa
+  success: '#28a745',   // Màu xanh lá
+  white: '#ffffff',
+  grey: '#888',
+};
+
 export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  header: { padding: 20, paddingTop: 10, backgroundColor: '#fff' }, // Giảm paddingTop vì đã có Header chung
+  header: { padding: 20, paddingTop: 10, backgroundColor: '#fff' }, 
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f2f5', borderRadius: 10, padding: 10 },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
 
@@ -22,13 +32,13 @@ export const styles = StyleSheet.create({
   btnText: { fontSize: 12, fontWeight: '600' },
 
   // --- FAB ---
-  fab: { position: 'absolute', bottom: 30, right: 30, width: 60, height: 60, borderRadius: 30, backgroundColor: '#1b1d1c', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  fab: { position: 'absolute', bottom: 30, right: 30, width: 60, height: 60, borderRadius: 30, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', elevation: 5 },
   fabText: { color: '#fff', fontSize: 30, marginTop: -4 },
 
   // --- Modal ---
-  modalContainer: { flex: 1, backgroundColor: '#fff', marginTop: 40, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderColor: '#eee' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
+  modalContainer: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 10, borderBottomWidth: 1, borderColor: '#eee' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', flex: 1 },
   modalBody: { padding: 20 },
   modalFooter: { padding: 20, borderTopWidth: 1, borderColor: '#eee' },
 
@@ -46,11 +56,11 @@ export const styles = StyleSheet.create({
 
   // --- Ingredients ---
   ingredientBox: { padding: 15, backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#eee' },
-  btnAddIng: { backgroundColor: '#1b1d1c', width: 45, height: 45, justifyContent: 'center', alignItems: 'center', borderRadius: 10, marginLeft: 10 },
+  btnAddIng: { backgroundColor: COLORS.primary, width: 45, height: 45, justifyContent: 'center', alignItems: 'center', borderRadius: 10, marginLeft: 10 },
   ingItem: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderColor: '#eee', alignItems: 'center' },
 
   // --- Action Buttons ---
-  saveBtn: { backgroundColor: '#1b1d1c', padding: 15, borderRadius: 10, alignItems: 'center' },
+  saveBtn: { backgroundColor: COLORS.primary, padding: 15, borderRadius: 10, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 
   // --- Pickers ---
