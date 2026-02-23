@@ -11,14 +11,14 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 
-import { styles } from './style';
+import { styles, COLORS } from './style';
 
 // --- CẤU HÌNH CLOUDINARY ---
 const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUD_NAME;
 const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 const hasCloudinaryConfig = () => Boolean(CLOUD_NAME && UPLOAD_PRESET);
 
-// --- 1. COMPONENT ITEM ---
+// --- 1. COMPONENT ITEM (Danh sách món ăn) ---
 const RecipeItem = memo(({ item, onEdit, onDelete }) => {
   return (
     <View style={styles.card}>
@@ -30,18 +30,19 @@ const RecipeItem = memo(({ item, onEdit, onDelete }) => {
       <View style={styles.cardInfo}>
         <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
         <Text style={styles.cardSub}>{item.time} phút | {item.servings} người</Text>
+        <Text style={{fontSize: 10, color: '#999'}}>ID: {item.recipeId}</Text>
       </View>
       <View style={{ justifyContent: 'center'}}>
         <TouchableOpacity onPress={() => onEdit(item)} style={styles.btnEdit}>
           <Text style={styles.btnText}>Sửa</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => onDelete(item)} style={styles.btnDel}>
-          <Text style={styles.btnText}>Xóa</Text>
+          <Text style={[styles.btnText, {color: '#333'}]}>Xóa</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
-}, (prev, next) => prev.item.recipeId === next.item.recipeId);
+});
 
 // --- 2. MÀN HÌNH CHÍNH ---
 export default function AdminRecipesScreen({ navigation }) {
@@ -55,8 +56,6 @@ export default function AdminRecipesScreen({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
   
   const [isEditMode, setIsEditMode] = useState(false);
-  const [currentDocId, setCurrentDocId] = useState(null); 
-
   const [formData, setFormData] = useState({
     recipeId: '', categoryId: '', title: '', servings: '', time: '',
     description: '', photo_url: '', photosArray: [], ingredients: []   
@@ -66,6 +65,21 @@ export default function AdminRecipesScreen({ navigation }) {
   const [showIngredientPicker, setShowIngredientPicker] = useState(false);
   const [tempIngredient, setTempIngredient] = useState({ id: '', name: '', quantity: '' });
   const [ingSearchText, setIngSearchText] = useState('');
+
+  // --- TẠO KEYWORDS ĐỂ SEARCH ---
+  const generateKeywords = (title) => {
+    if (!title) return [];
+    const nameStr = title.toLowerCase();
+    const arrName = nameStr.split(" ");
+    const result = [nameStr];
+    let curName = "";
+    arrName.forEach(str => {
+        curName += (curName ? " " : "") + str;
+        result.push(curName);
+        result.push(str);
+    });
+    return [...new Set(result)];
+  };
 
   // --- LOAD DỮ LIỆU ---
   const fetchData = async () => {
@@ -77,12 +91,12 @@ export default function AdminRecipesScreen({ navigation }) {
         getDocs(collection(db, 'ingredients'))
       ]);
 
-      setRecipes(recSnap.docs.map(doc => ({ firestoreDocId: doc.id, ...doc.data() })));
-      setCategories(catSnap.docs.map(doc => ({ firestoreDocId: doc.id, ...doc.data() })));
-      setIngredientsDB(ingSnap.docs.map(doc => {
-          const data = doc.data();
-          return { firestoreDocId: doc.id, ...data, id: data.ingredientId };
-      }));
+      setRecipes(recSnap.docs.map(doc => ({ ...doc.data() })));
+      setCategories(catSnap.docs.map(doc => ({ ...doc.data() })));
+      setIngredientsDB(ingSnap.docs.map(doc => ({ 
+        ...doc.data(), 
+        id: doc.data().ingredientId 
+      })));
     } catch (error) {
       Alert.alert("Lỗi", error.message);
     } finally {
@@ -92,46 +106,36 @@ export default function AdminRecipesScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- HÀM UPLOAD ---
+  // --- UPLOAD CLOUDINARY ---
   const uploadToCloudinary = async (imageFile) => {
     if (!hasCloudinaryConfig()) return null;
-
-    if (!imageFile || !imageFile.uri) return null;
     const data = new FormData();
     const uri = Platform.OS === 'android' ? imageFile.uri : imageFile.uri.replace('file://', '');
-    const filename = uri.split('/').pop() || 'upload.jpg';
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : `image/jpeg`;
-
-    data.append('file', { uri, name: filename, type });
+    data.append('file', { uri, name: `recipe_${Date.now()}.jpg`, type: 'image/jpeg' });
     data.append('upload_preset', UPLOAD_PRESET);
 
     try {
       const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-        method: 'POST',
-        body: data,
-        headers: { 'Accept': 'application/json', 'Content-Type': 'multipart/form-data' },
+        method: 'POST', body: data,
       });
       const result = await response.json();
-      return response.ok ? result.secure_url : null;
-    } catch (error) {
-      console.error("Fetch Error:", error);
-      return null;
-    }
+      return result.secure_url;
+    } catch (error) { return null; }
   };
 
+  // --- CHỌN ẢNH (ĐÃ FIX WARNING) ---
   const pickImage = async (type) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Lỗi', 'Cần quyền truy cập ảnh');
 
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images', 
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.5,
     });
 
-    if (!result.canceled && result.assets && result.assets[0]) {
+    if (!result.canceled && result.assets) {
       setUploading(true);
       const url = await uploadToCloudinary(result.assets[0]); 
       setUploading(false);
@@ -142,110 +146,89 @@ export default function AdminRecipesScreen({ navigation }) {
     }
   };
 
-  // --- LOGIC FORM ---
-  const addIngredientToForm = () => {
-    // Sửa check id !== '' để cho phép chọn ID 0
-    if (tempIngredient.id === '' || !tempIngredient.quantity) {
-        return Alert.alert("Lỗi", "Vui lòng chọn nguyên liệu và nhập SL.");
-    }
-    const newIng = { 
-        ingredientId: Number(tempIngredient.id), 
-        name: tempIngredient.name, 
-        quantity: tempIngredient.quantity 
-    };
-    setFormData({ ...formData, ingredients: [...formData.ingredients, newIng] });
-    setTempIngredient({ id: '', name: '', quantity: '' }); 
-  };
-
-  const removeIngredient = (index) => {
-    const newList = [...formData.ingredients];
-    newList.splice(index, 1);
-    setFormData({ ...formData, ingredients: newList });
-  };
-
+  // --- LƯU DỮ LIỆU ---
   const handleSave = async () => {
-    // Check categoryId !== '' để chấp nhận ID 0
-    if (!formData.title || formData.categoryId === '' || !formData.recipeId) {
-        return Alert.alert("Thiếu thông tin", "Nhập đầy đủ ID, tên món và danh mục.");
-    }
+    if (!formData.title || formData.categoryId === '') return Alert.alert("Lỗi", "Vui lòng nhập tên và chọn danh mục.");
     
     setLoading(true);
     try {
-      const docRef = isEditMode && currentDocId ? doc(db, 'recipes', currentDocId) : doc(collection(db, 'recipes'));
+      const recipeIdNum = Number(formData.recipeId);
       const dataToSave = {
-        recipeId: Number(formData.recipeId), 
-        categoryId: Number(formData.categoryId), 
+        recipeId: recipeIdNum,
+        categoryId: Number(formData.categoryId),
+        categoryIds: [Number(formData.categoryId)], 
         title: formData.title,
         servings: Number(formData.servings) || 1,
-        time: Number(formData.time) || 0,
+        time: String(formData.time),
         description: formData.description,
         photo_url: formData.photo_url,
-        photosArray: formData.photosArray,
+        photosArray: formData.photosArray || [],
+        keywords: generateKeywords(formData.title),
         ingredients: formData.ingredients.map(i => ({ 
             ingredientId: Number(i.ingredientId), 
             quantity: i.quantity 
         })),
         updatedAt: serverTimestamp()
       };
-      await setDoc(docRef, dataToSave);
+
+      await setDoc(doc(db, 'recipes', String(recipeIdNum)), dataToSave, { merge: true });
       setModalVisible(false);
       fetchData();
-      Alert.alert("Thành công", "Đã lưu công thức.");
+      Alert.alert("Thành công", "Dữ liệu đã được lưu!");
     } catch (e) { Alert.alert("Lỗi", e.message); } 
     finally { setLoading(false); }
   };
 
   const openModal = useCallback((item = null) => {
+    // --- DỌN DẸP STATE TẠM THỜI TẠI ĐÂY ---
+    setTempIngredient({ id: '', name: '', quantity: '' });
+    setIngSearchText('');
+    // -------------------------------------
+
     if (item) {
       setIsEditMode(true);
-      setCurrentDocId(item.firestoreDocId); 
       const mappedIngs = (item.ingredients || []).map(ing => {
-        // Dùng String để so sánh ID 0 chính xác
-        const found = ingredientsDB.find(d => String(d.id) === String(ing.ingredientId));
-        return { ...ing, name: found ? found.name : 'Không xác định' };
+        const found = ingredientsDB.find(d => Number(d.id) === Number(ing.ingredientId));
+        return { ...ing, name: found ? found.name : 'Nguyên liệu ' + ing.ingredientId };
       });
       setFormData({ 
           ...item, 
           recipeId: String(item.recipeId), 
           ingredients: mappedIngs, 
-          photosArray: item.photosArray || [],
-          categoryId: item.categoryId === undefined ? '' : item.categoryId
+          categoryId: String(item.categoryId)
       });
     } else {
       setIsEditMode(false);
-      setCurrentDocId(null);
-      const maxId = recipes.reduce((max, r) => Math.max(max, Number(r.recipeId) || 0), 0);
+      const maxId = recipes.reduce((max, r) => Math.max(max, Number(r.recipeId) || 0), -1);
       setFormData({ 
-        recipeId: String(maxId + 1), categoryId: '', title: '', servings: '', time: '', 
+        recipeId: String(maxId + 1), categoryId: '', title: '', servings: '1', time: '10', 
         description: '', photo_url: '', photosArray: [], ingredients: [] 
       });
     }
     setModalVisible(true);
   }, [recipes, ingredientsDB]);
 
-  const handleDelete = useCallback((item) => {
-    Alert.alert("Xác nhận", `Xóa "${item.title}"?`, [
-      { text: "Hủy" },
-      { text: "Xóa", style: 'destructive', onPress: async () => {
-          await deleteDoc(doc(db, 'recipes', item.firestoreDocId));
-          fetchData();
-      }}
-    ]);
-  }, []);
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.searchBar}>
-            <Text style={{fontSize: 20}}>🔍</Text>
+            <Text style={{fontSize: 20}}>🍳</Text>
             <TextInput style={styles.searchInput} placeholder="Tìm món ăn..." value={searchText} onChangeText={setSearchText} />
         </View>
       </View>
 
       <FlatList 
         data={recipes.filter(i => i.title?.toLowerCase().includes(searchText.toLowerCase()))}
-        keyExtractor={item => String(item.recipeId || item.firestoreDocId)}
-        renderItem={({item}) => <RecipeItem item={item} onEdit={openModal} onDelete={handleDelete} />}
+        keyExtractor={item => String(item.recipeId)}
+        renderItem={({item}) => <RecipeItem item={item} onEdit={openModal} onDelete={(i) => {
+          Alert.alert("Xác nhận", "Xóa công thức này?", [
+            {text:"Hủy"}, 
+            {text:"Xóa", style:'destructive', onPress: async () => {
+              await deleteDoc(doc(db, 'recipes', String(i.recipeId)));
+              fetchData();
+            }}
+          ]);
+        }} />}
         contentContainerStyle={{paddingBottom: 100}}
       />
 
@@ -255,66 +238,110 @@ export default function AdminRecipesScreen({ navigation }) {
 
       <Modal visible={modalVisible} animationType="slide">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : null} style={{flex: 1}}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{isEditMode ? 'Sửa món' : 'Thêm mới'}</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)}><Text style={{fontSize: 24, color:'#999'}}>✕</Text></TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.modalBody}>
-            <Text style={styles.label}>Ảnh bìa</Text>
-            <TouchableOpacity style={styles.coverPicker} onPress={() => pickImage('cover')} disabled={uploading}>
-              {uploading ? <ActivityIndicator color="#000" /> : 
-                formData.photo_url ? <Image source={{ uri: formData.photo_url }} style={styles.coverImage} /> : 
-                <View style={styles.coverPlaceholder}><Text>+ Tải ảnh bìa</Text></View>
-              }
-            </TouchableOpacity>
-
-            <Text style={styles.label}>Tên món ăn</Text>
-            <TextInput style={styles.input} placeholder="..." value={formData.title} onChangeText={t => setFormData({...formData, title: t})} />
-            
-            <Text style={styles.label}>Danh mục</Text>
-            <TouchableOpacity style={styles.selectBox} onPress={() => setShowCategoryPicker(true)}>
-                <Text>{categories.find(c => String(c.id) === String(formData.categoryId))?.name || "Chọn..."}</Text>
-                <Text>▼</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.label}>Nguyên liệu</Text>
-            <View style={styles.ingredientBox}>
-                <View style={{flexDirection: 'row', marginBottom: 10}}>
-                    <TouchableOpacity style={[styles.selectBox, {flex: 2, marginBottom: 0}]} onPress={() => setShowIngredientPicker(true)}>
-                        <Text numberOfLines={1}>{tempIngredient.id !== '' ? `[${tempIngredient.id}] ${tempIngredient.name}` : "Chọn..."}</Text>
-                    </TouchableOpacity>
-                    <TextInput style={[styles.input, {flex: 1, marginLeft: 5, marginBottom: 0}]} placeholder="SL" value={tempIngredient.quantity} onChangeText={t => setTempIngredient({...tempIngredient, quantity: t})} />
-                    <TouchableOpacity style={styles.btnAddIng} onPress={addIngredientToForm}><Text style={{color: '#fff', fontSize: 20}}>+</Text></TouchableOpacity>
-                </View>
-                {formData.ingredients.map((item, index) => (
-                    <View key={index} style={styles.ingItem}>
-                        <Text style={{flex: 1}}>• {item.name} ({item.quantity})</Text>
-                        <TouchableOpacity onPress={() => removeIngredient(index)}><Text style={{color: 'red'}}>✕</Text></TouchableOpacity>
-                    </View>
-                ))}
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{isEditMode ? 'Sửa Công Thức' : 'Thêm Món Mới'}</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}><Text style={{fontSize: 24, color:'#999'}}>✕</Text></TouchableOpacity>
             </View>
-
-            <Text style={styles.label}>Mô tả cách làm</Text>
-            <TextInput style={[styles.input, {height: 100, textAlignVertical: 'top'}]} multiline value={formData.description} onChangeText={t => setFormData({...formData, description: t})} />
-            <View style={{height: 100}} />
-          </ScrollView>
-
-          <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#fff"/> : <Text style={styles.saveBtnText}>LƯU CÔNG THỨC</Text>}
+            
+            <ScrollView style={styles.modalBody}>
+              <Text style={styles.label}>Ảnh đại diện</Text>
+              <TouchableOpacity style={styles.coverPicker} onPress={() => pickImage('cover')} disabled={uploading}>
+                {uploading ? <ActivityIndicator /> : 
+                  formData.photo_url ? <Image source={{ uri: formData.photo_url }} style={styles.coverImage} /> : 
+                  <View style={styles.coverPlaceholder}><Text>+ Tải ảnh bìa</Text></View>
+                }
               </TouchableOpacity>
+
+              <Text style={styles.label}>Tên món ăn</Text>
+              <TextInput style={styles.input} placeholder="Tên món ăn" value={formData.title} onChangeText={t => setFormData({...formData, title: t})} />
+              <View style={{flexDirection: 'row', gap: 10}}>
+                <Text style={[styles.label, {flex: 1}]}>Thời gian nấu</Text>
+                <Text style={[styles.label, {flex: 1}]}>Số người ăn</Text>
+              </View>
+              <View style={{flexDirection: 'row', gap: 10}}>
+                <TextInput style={[styles.input, {flex: 1}]} placeholder="Phút" keyboardType="numeric" value={formData.time} onChangeText={t => setFormData({...formData, time: t})} />
+                <TextInput style={[styles.input, {flex: 1}]} placeholder="Người ăn" keyboardType="numeric" value={String(formData.servings)} onChangeText={t => setFormData({...formData, servings: t})} />
+              </View>
+
+              <Text style={styles.label}>Danh mục</Text>
+              <TouchableOpacity style={styles.selectBox} onPress={() => setShowCategoryPicker(true)}>
+                  <Text>{categories.find(c => String(c.id) === String(formData.categoryId))?.name || "Chọn danh mục..."}</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.label}>Nguyên liệu</Text>
+              <View style={styles.ingredientBox}>
+                  <View style={{flexDirection: 'row', marginBottom: 10}}>
+                      <TouchableOpacity style={[styles.selectBox, {flex: 2}]} onPress={() => setShowIngredientPicker(true)}>
+                          <Text numberOfLines={1}>{tempIngredient.id !== '' ? tempIngredient.name : "Chọn..."}</Text>
+                      </TouchableOpacity>
+                      <TextInput style={[styles.input, {flex: 1, marginLeft: 5}]} placeholder="kg, g,..." value={tempIngredient.quantity} onChangeText={t => setTempIngredient({...tempIngredient, quantity: t})} />
+                      <TouchableOpacity style={styles.btnAddIng} onPress={() => {
+                        if (tempIngredient.id === '' || !tempIngredient.quantity) return;
+                        setFormData({ ...formData, ingredients: [...formData.ingredients, { ingredientId: tempIngredient.id, name: tempIngredient.name, quantity: tempIngredient.quantity }] });
+                        setTempIngredient({ id: '', name: '', quantity: '' });
+                      }}><Text style={{color: '#fff', fontSize: 20}}>+</Text></TouchableOpacity>
+                  </View>
+                  {formData.ingredients.map((item, index) => (
+                      <View key={index} style={styles.ingItem}>
+                          <Text style={{flex: 1}}>• {item.name}: {item.quantity}</Text>
+                          {/* Nút xóa nguyên liệu màu đen */}
+                          <TouchableOpacity onPress={() => {
+                            let list = [...formData.ingredients]; list.splice(index, 1);
+                            setFormData({...formData, ingredients: list});
+                          }} style={{padding: 5}}>
+                            <Text style={{color: '#1b1d1c', fontWeight: 'bold'}}>✕</Text>
+                          </TouchableOpacity>
+                      </View>
+                  ))}
+              </View>
+
+              <Text style={styles.label}>Album ảnh các bước</Text>
+              <ScrollView horizontal style={{flexDirection:'row', marginBottom: 15}}>
+                  {formData.photosArray.map((img, idx) => (
+                    <View key={idx} style={{marginRight: 12, marginTop: 5}}>
+                      <Image source={{uri: img}} style={{width: 80, height: 80, borderRadius: 8}} />
+                      {/* Nút xóa ảnh album màu đen */}
+                      <TouchableOpacity 
+                        style={{
+                          position:'absolute', top: -5, right: -5, 
+                          backgroundColor: '#1b1d1c', borderRadius: 12,
+                          width: 22, height: 22, justifyContent: 'center', alignItems: 'center',
+                          borderWidth: 1, borderColor: '#fff'
+                        }} 
+                        onPress={() => {
+                          let arr = [...formData.photosArray]; arr.splice(idx, 1);
+                          setFormData({...formData, photosArray: arr});
+                        }}
+                      >
+                        <Text style={{color:'#fff', fontSize: 10, fontWeight: 'bold'}}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <TouchableOpacity style={[styles.coverPlaceholder, {width: 80, height: 80, borderRadius: 8, borderWidth: 1, borderStyle: 'dashed'}]} onPress={() => pickImage('array')}>
+                    <Text style={{color: '#999', fontSize: 24}}>+</Text>
+                  </TouchableOpacity>
+              </ScrollView>
+
+              <Text style={styles.label}>Cách chế biến</Text>
+              <TextInput style={[styles.input, {height: 120, textAlignVertical: 'top'}]} multiline value={formData.description} onChangeText={t => setFormData({...formData, description: t})} />
+              <View style={{height: 20}} />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+                <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                    {loading ? <ActivityIndicator color="#fff"/> : <Text style={styles.saveBtnText}>LƯU CÔNG THỨC</Text>}
+                </TouchableOpacity>
+            </View>
           </View>
-        </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* PICKER CATEGORY */}
-      <Modal visible={showCategoryPicker} transparent animationType="fade">
+      {/* MODALS CHỌN DANH MỤC & NGUYÊN LIỆU */}
+      <Modal visible={showCategoryPicker} transparent>
         <TouchableOpacity style={styles.pickerOverlay} onPress={() => setShowCategoryPicker(false)}>
           <View style={styles.pickerBody}>
-            <FlatList data={categories} keyExtractor={i=>String(i.firestoreDocId)} renderItem={({item}) => (
+            <FlatList data={categories} keyExtractor={i=>String(i.id)} renderItem={({item}) => (
               <TouchableOpacity style={styles.pickerItem} onPress={() => { setFormData({...formData, categoryId: item.id}); setShowCategoryPicker(false); }}>
                 <Text>{item.name}</Text>
               </TouchableOpacity>
@@ -323,11 +350,10 @@ export default function AdminRecipesScreen({ navigation }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* PICKER INGREDIENT */}
-      <Modal visible={showIngredientPicker} transparent animationType="fade">
+      <Modal visible={showIngredientPicker} transparent>
         <View style={styles.pickerOverlay}>
-          <View style={[styles.pickerBody, {height: '60%'}]}>
-            <TextInput style={styles.input} placeholder="Tìm nguyên liệu..." value={ingSearchText} onChangeText={setIngSearchText} />
+          <View style={[styles.pickerBody, {height: '70%'}]}>
+            <TextInput style={[styles.input, {margin: 10}]} placeholder="Lọc nguyên liệu..." value={ingSearchText} onChangeText={setIngSearchText} />
             <FlatList 
                 data={ingredientsDB.filter(i => i.name?.toLowerCase().includes(ingSearchText.toLowerCase()))} 
                 keyExtractor={i=>String(i.id)} 
@@ -340,6 +366,7 @@ export default function AdminRecipesScreen({ navigation }) {
                     </TouchableOpacity>
                 )}
             />
+            <TouchableOpacity onPress={()=>setShowIngredientPicker(false)} style={{padding: 15, alignItems:'center'}}><Text style={{color: '#1b1d1c', fontWeight: 'bold'}}>Đóng</Text></TouchableOpacity>
           </View>
         </View>
       </Modal>

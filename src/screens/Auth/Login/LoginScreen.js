@@ -182,9 +182,25 @@ export default function LoginScreen({ navigation }) {
         await checkAndCreateUserData(userCredential.user);
       }
     } catch (error) {
-      if (error.code !== 'RNGoogleSignin:SIGN_IN_CANCELLED') {
-        Alert.alert("Thông báo", "Vui lòng chọn tài khoản Google để tiếp tục đăng nhập.");
+      console.log("Google Sign-In Error:", error);
+      console.log("Error Code:", error.code);
+      console.log("Error Message:", error.message);
+      
+      let errorMessage = "Đã xảy ra lỗi. Vui lòng thử lại.";
+      
+      if (error.code === 'RNGoogleSignin:SIGN_IN_CANCELLED') {
+        errorMessage = "Bạn đã hủy đăng nhập Google.";
+      } else if (error.code === 'RNGoogleSignin:DEVELOPER_ERROR') {
+        errorMessage = "Lỗi cấu hình: Kiểm tra Google Cloud Console và SHA1 fingerprint.";
+      } else if (error.code === 'RNGoogleSignin:ERROR') {
+        errorMessage = "Lỗi kết nối: " + (error.message || "Không xác định");
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        errorMessage = "Cửa sổ đăng nhập đã bị đóng.";
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+      
+      Alert.alert("Lỗi Google Sign-In", errorMessage);
     } finally {
       setLoading(false);
     }

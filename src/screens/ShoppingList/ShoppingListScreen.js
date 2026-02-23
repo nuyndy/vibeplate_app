@@ -203,7 +203,7 @@ export default function ShoppingListScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={{ height: 100 }} />
+      <View style={{ height: 10 }} />
       <View style={styles.inputContainer}>
         <TextInput style={[styles.input, { flex: 2 }]} placeholder="Thêm món..." value={newItemName} onChangeText={setNewItemName} />
         <TextInput style={[styles.input, { flex: 0.8, textAlign: 'center' }]} placeholder="SL" keyboardType='numeric' value={newItemQuantity} onChangeText={setNewItemQuantity} />

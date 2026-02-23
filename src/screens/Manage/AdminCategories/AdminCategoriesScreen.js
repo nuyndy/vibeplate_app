@@ -6,8 +6,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { db } from '../../../firebase/firebaseConfig';
 import { 
-  collection, getDocs, doc, deleteDoc, setDoc, 
-  query, where, getDocs as getDocsQuery 
+  collection, getDocs, doc, deleteDoc, setDoc 
 } from 'firebase/firestore';
 
 import { styles, COLORS } from './style';
@@ -26,7 +25,7 @@ export default function AdminCategoriesScreen({ navigation }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState({});
   const [selectedImage, setSelectedImage] = useState(null);
-  const [nextId, setNextId] = useState(''); // State lưu ID dự kiến
+  const [nextId, setNextId] = useState(0); // Lưu ID dưới dạng Number
 
   // --- 1. LOAD DỮ LIỆU ---
   const fetchData = async () => {
@@ -35,9 +34,10 @@ export default function AdminCategoriesScreen({ navigation }) {
       const querySnapshot = await getDocs(collection(db, TABS.CATEGORIES));
       let items = [];
       querySnapshot.forEach((docItem) => {
-        items.push({ ...docItem.data(), id: docItem.id });
+        items.push({ ...docItem.data(), docId: docItem.id });
       });
-      // Sắp xếp ID số giảm dần (mới nhất lên đầu)
+      
+      // Sắp xếp theo ID số giảm dần (mới nhất lên đầu)
       items.sort((a, b) => Number(b.id) - Number(a.id));
       setDataList(items);
     } catch (error) {
@@ -49,14 +49,14 @@ export default function AdminCategoriesScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- 2. CHỌN ẢNH (FIX LỖI MEDIATYPE & TRUY CẬP) ---
+  // --- 2. CHỌN ẢNH ---
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Thông báo', 'Cần quyền truy cập thư viện ảnh');
 
     try {
       let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images', // Dùng chuỗi thay vì Enum để tránh lỗi undefined
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -70,12 +70,14 @@ export default function AdminCategoriesScreen({ navigation }) {
     }
   };
 
-  // --- 3. UPLOAD CLOUDINARY (FIX LỖI ANDROID) ---
+  // --- 3. UPLOAD CLOUDINARY ---
   const uploadToCloudinary = async (imageUri) => {
     if (!imageUri) return null;
-    if (!hasCloudinaryConfig()) return null;
+    if (!hasCloudinaryConfig()) {
+      console.error("Thiếu cấu hình Cloudinary");
+      return null;
+    }
     const data = new FormData();
-    // Fix URI cho Android/iOS
     const cleanUri = Platform.OS === 'ios' ? imageUri.replace('file://', '') : imageUri;
     
     data.append('file', { 
@@ -98,50 +100,54 @@ export default function AdminCategoriesScreen({ navigation }) {
     }
   };
 
-  // --- 4. MỞ MODAL & TỰ TÍNH ID (VÍ DỤ 12 -> 13) ---
+  // --- 4. MỞ MODAL & TỰ TÍNH ID KẾ TIẾP ---
   const openModal = (item = null) => {
     if (item) {
       setIsEditMode(true);
       setFormData({ ...item });
-      setNextId(String(item.id));
+      setNextId(Number(item.id));
     } else {
       setIsEditMode(false);
       setFormData({ name: '', photo_url: '' });
 
-      // Logic tính số tiếp theo: Tìm max hiện tại
-      let maxId = 0;
-      dataList.forEach(obj => {
-        const idNum = parseInt(obj.id);
-        if (!isNaN(idNum) && idNum > maxId) maxId = idNum;
-      });
-      setNextId(String(maxId + 1)); // Nếu lớn nhất là 12, nextId sẽ là 13
+      // Tìm ID lớn nhất hiện có
+      const maxId = dataList.reduce((max, obj) => {
+        const idVal = Number(obj.id);
+        return idVal > max ? idVal : max;
+      }, 0);
+      
+      setNextId(maxId + 1); // Ví dụ: đang có 12 thì số tiếp theo là 13
     }
     setSelectedImage(null);
     setModalVisible(true);
   };
 
-  // --- 5. LƯU DỮ LIỆU ---
+  // --- 5. LƯU DỮ LIỆU (Đảm bảo 3 trường: id (number), name, photo_url) ---
   const handleSave = async () => {
     if (!formData.name) return Alert.alert("Lỗi", "Vui lòng nhập Tên danh mục");
 
     setLoading(true);
     try {
-      let dataToSave = { ...formData };
+      let finalImageUrl = formData.photo_url || "";
 
       if (selectedImage) {
         const url = await uploadToCloudinary(selectedImage.uri);
-        if (url) dataToSave.photo_url = url;
+        if (url) finalImageUrl = url;
       }
 
-      // docId lấy từ nextId đã tính
-      const docId = nextId;
-      delete dataToSave.id; 
+      // Chuẩn bị object đúng yêu cầu của bạn
+      const dataToSave = {
+        id: Number(nextId),          // Trường 1: id (Number)
+        name: String(formData.name),  // Trường 2: name (String)
+        photo_url: finalImageUrl      // Trường 3: photo_url (String)
+      };
 
-      await setDoc(doc(db, TABS.CATEGORIES, docId), dataToSave, { merge: true });
+      // Lưu document với ID là chuỗi của con số đó
+      await setDoc(doc(db, TABS.CATEGORIES, String(nextId)), dataToSave, { merge: true });
       
       setModalVisible(false);
       fetchData();
-      Alert.alert("Thành công", isEditMode ? "Đã cập nhật! 😋" : `Đã thêm danh mục mới! 😋`);
+      Alert.alert("Thành công", isEditMode ? "Đã cập nhật! 😋" : `Đã thêm danh mục số ${nextId}! 😋`);
     } catch (error) {
       Alert.alert("Lỗi", error.message);
     } finally {
@@ -154,7 +160,7 @@ export default function AdminCategoriesScreen({ navigation }) {
       <Image source={{ uri: item.photo_url || "https://via.placeholder.com/150" }} style={styles.cardImage} />
       <View style={styles.cardContent}>
         <Text style={styles.cardTitle}>{item.name}</Text>
-        <Text style={styles.cardSub}>ID: {item.id}</Text>
+        <Text style={styles.cardSub}>ID số: {item.id}</Text>
       </View>
       <View style={styles.cardActions}>
         <TouchableOpacity onPress={() => openModal(item)} style={[styles.actionBtn, { backgroundColor: COLORS.edit }]}>
@@ -203,11 +209,11 @@ export default function AdminCategoriesScreen({ navigation }) {
                 <TouchableOpacity onPress={() => setModalVisible(false)}><Text style={{fontSize: 20, color: '#999'}}>✕</Text></TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-               <View style={styles.inputGroup}>
-                  <Text style={styles.label}>ID Danh mục (Tự động)</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Số thứ tự (ID hệ thống)</Text>
                   <TextInput
                     style={[styles.input, {backgroundColor: '#eee', color: COLORS.primary, fontWeight: 'bold'}]}
-                    value={nextId}
+                    value={String(nextId)}
                     editable={false} 
                   />
                 </View>
@@ -237,7 +243,7 @@ export default function AdminCategoriesScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
             </ScrollView>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>LƯU DỮ LIỆU</Text>}
             </TouchableOpacity>
           </KeyboardAvoidingView>
